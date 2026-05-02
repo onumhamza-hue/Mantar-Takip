@@ -1,0 +1,1854 @@
+﻿#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Mantar Üretimi - İş Takip ve Yönetim Sistemi
+"""
+
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, date, timedelta
+import sqlite3
+import json
+from pathlib import Path
+
+# Sayfa yapılandırması
+st.set_page_config(
+    page_title="🍄 Mantar İş Takip Sistemi",
+    page_icon="🍄",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ── Şifre Koruması ────────────────────────────────────────────────────────────
+APP_SIFRE = "mantar2024"   # ← Buradan şifrenizi değiştirebilirsiniz
+
+def _sifre_kontrol():
+    if st.session_state.get("giris_yapildi"):
+        return True
+    st.title("🍄 Mantar İş Takip Sistemi")
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.subheader("🔒 Giriş")
+        girilen = st.text_input("Şifre", type="password", key="sifre_input")
+        if st.button("Giriş Yap", type="primary", use_container_width=True):
+            if girilen == APP_SIFRE:
+                st.session_state["giris_yapildi"] = True
+                st.rerun()
+            else:
+                st.error("❌ Hatalı şifre!")
+    st.stop()
+
+_sifre_kontrol()
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Veritabanı bağlantısı ─────────────────────────────────────────────────────
+import os, re as _re
+
+DB_PATH  = "mantar_is_takip.db"
+_DB_URL  = None
+IS_CLOUD = False
+
+def _detect_cloud():
+    global _DB_URL, IS_CLOUD
+    try:
+        if "DB_URL" in st.secrets:
+            _DB_URL  = st.secrets["DB_URL"]
+            IS_CLOUD = True
+    except Exception:
+        pass
+
+_detect_cloud()
+
+if IS_CLOUD:
+    import psycopg2 as _psycopg2
+
+    class _PGCursor:
+        def __init__(self, cur):
+            self._c = cur
+            self.lastrowid = None
+
+        @property
+        def description(self): return self._c.description
+
+        def execute(self, sql, params=None):
+            s = _re.sub(r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b',
+                        'SERIAL PRIMARY KEY', sql, flags=_re.IGNORECASE)
+            s = s.replace('?', '%s')
+            if s.strip().upper().startswith('INSERT') and 'RETURNING' not in s.upper():
+                s = s.rstrip().rstrip(';') + ' RETURNING id'
+                self._c.execute(s, params) if params is not None else self._c.execute(s)
+                row = self._c.fetchone()
+                self.lastrowid = row[0] if row else None
+            else:
+                self._c.execute(s, params) if params is not None else self._c.execute(s)
+                self.lastrowid = None
+            return self
+
+        def executemany(self, sql, params_list):
+            s = _re.sub(r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b',
+                        'SERIAL PRIMARY KEY', sql, flags=_re.IGNORECASE)
+            self._c.executemany(s.replace('?', '%s'), params_list)
+
+        def fetchone(self):          return self._c.fetchone()
+        def fetchall(self):          return self._c.fetchall()
+        def fetchmany(self, n=None): return self._c.fetchmany(n) if n else self._c.fetchmany()
+        def close(self):             self._c.close()
+        def __iter__(self):          return iter(self._c)
+
+    class _PGConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def cursor(self):   return _PGCursor(self._conn.cursor())
+        def commit(self):   self._conn.commit()
+        def close(self):    self._conn.close()
+        def rollback(self): self._conn.rollback()
+
+
+def get_db_connection():
+    """Veritabanı bağlantısı al (SQLite yerel / PostgreSQL bulut)"""
+    if IS_CLOUD:
+        return _PGConnection(_psycopg2.connect(_DB_URL))
+    return sqlite3.connect(DB_PATH)
+
+
+def _read_sql(sql, conn, params=None):
+    """pd.read_sql yerine — SQLite ve PostgreSQL uyumlu"""
+    if IS_CLOUD:
+        pg_sql = sql.replace('?', '%s')
+        raw    = conn._conn if hasattr(conn, '_conn') else conn
+        cur    = raw.cursor()
+        try:
+            cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
+            cols = [d[0] for d in cur.description]
+            return pd.DataFrame(cur.fetchall(), columns=cols)
+        finally:
+            cur.close()
+    return _read_sql(sql, conn, params=params)
+
+# ───────────────────────────────────────────────────────────────────────────────
+
+def init_database():
+    """Veritabanını başlat"""
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Gider kalemleri tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS gider_kalemleri
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  kalem_adi TEXT NOT NULL,
+                  birim_fiyat REAL NOT NULL,
+                  aciklama TEXT,
+                  aktif INTEGER DEFAULT 1,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # Odalar tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS odalar
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_adi TEXT NOT NULL UNIQUE,
+                  alan_m2 REAL,
+                  kapasite_kg REAL,
+                  durum TEXT DEFAULT 'Aktif',
+                  aciklama TEXT,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # Oda giderleri tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS oda_giderleri
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_id INTEGER NOT NULL,
+                  gider_kalemi TEXT NOT NULL,
+                  tutar REAL NOT NULL,
+                  tarih DATE NOT NULL,
+                  aciklama TEXT,
+                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+    
+    # Günlük hasat tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS gunluk_hasat
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_id INTEGER NOT NULL,
+                  tarih DATE NOT NULL,
+                  hasat_kg REAL NOT NULL,
+                  kalite TEXT,
+                  aciklama TEXT,
+                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+    
+    # Satış tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS satislar
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_id INTEGER NOT NULL,
+                  tarih DATE NOT NULL,
+                  alan_kisi TEXT NOT NULL,
+                  satis_kg REAL NOT NULL,
+                  birim_fiyat REAL NOT NULL,
+                  toplam_tutar REAL NOT NULL,
+                  fire_kg REAL DEFAULT 0,
+                  nakliye_ucreti REAL DEFAULT 0,
+                  aciklama TEXT,
+                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+    
+    # İklim verileri tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS iklim_verileri
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_id INTEGER NOT NULL,
+                  tarih DATE NOT NULL,
+                  saat TIME NOT NULL,
+                  sicaklik REAL,
+                  nem REAL,
+                  co2 REAL,
+                  aciklama TEXT,
+                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+    
+    # İşçiler tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS isciler
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  ad_soyad TEXT NOT NULL,
+                  telefon TEXT,
+                  pozisyon TEXT,
+                  gunluk_ucret REAL DEFAULT 0,
+                  saat_ucreti REAL DEFAULT 0,
+                  aktif INTEGER DEFAULT 1,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    
+    # Puantaj tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS puantaj
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  isci_id INTEGER NOT NULL,
+                  tarih DATE NOT NULL,
+                  giris_saati TEXT,
+                  cikis_saati TEXT,
+                  toplam_saat REAL,
+                  mesai_saati REAL DEFAULT 0,
+                  tatil INTEGER DEFAULT 0,
+                  aciklama TEXT,
+                  FOREIGN KEY (isci_id) REFERENCES isciler(id))''')
+    
+    # Migration: tatil sütununu eski veritabanlarına ekle
+    try:
+        c.execute("ALTER TABLE puantaj ADD COLUMN tatil INTEGER DEFAULT 0")
+    except Exception:
+        pass  # Sütun zaten mevcut
+
+    # Cariler tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS cariler
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  cari_adi TEXT NOT NULL,
+                  telefon TEXT,
+                  adres TEXT,
+                  aciklama TEXT,
+                  aktif INTEGER DEFAULT 1,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    # Migration: satislar tablosuna cari_id ekle
+    try:
+        c.execute("ALTER TABLE satislar ADD COLUMN cari_id INTEGER REFERENCES cariler(id)")
+    except Exception:
+        pass  # Sütun zaten mevcut
+
+    # Mevcut satışlardaki alan_kisi değerlerinden otomatik cari oluştur
+    c.execute("SELECT DISTINCT alan_kisi FROM satislar WHERE alan_kisi IS NOT NULL AND alan_kisi != '' AND cari_id IS NULL")
+    mevcut_alicilar = c.fetchall()
+    for (alan_kisi_val,) in mevcut_alicilar:
+        c.execute("SELECT id FROM cariler WHERE cari_adi = ?", (alan_kisi_val,))
+        row = c.fetchone()
+        if row:
+            cari_id_val = row[0]
+        else:
+            c.execute("INSERT INTO cariler (cari_adi) VALUES (?)", (alan_kisi_val,))
+            cari_id_val = c.lastrowid
+        c.execute("UPDATE satislar SET cari_id=? WHERE alan_kisi=? AND cari_id IS NULL", (cari_id_val, alan_kisi_val))
+
+    # Cari hareketler tablosu (4 işlem türü: SATIS, ALIS, TAHSILAT, ODEME)
+    c.execute('''CREATE TABLE IF NOT EXISTS cari_hareketler
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  cari_id INTEGER NOT NULL REFERENCES cariler(id),
+                  tarih DATE NOT NULL,
+                  hareket_turu TEXT NOT NULL,
+                  tutar REAL NOT NULL,
+                  aciklama TEXT,
+                  referans_id INTEGER,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    # Migration: cari_hareketler tablosuna miktar ve birim_fiyat sütunları ekle (yoksa)
+    try:
+        c.execute("ALTER TABLE cari_hareketler ADD COLUMN miktar REAL")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE cari_hareketler ADD COLUMN birim_fiyat REAL")
+    except Exception:
+        pass
+
+    # Migration: mevcut satislar kayıtlarını cari_hareketler'e aktar (SATIS olarak)
+    c.execute("""INSERT INTO cari_hareketler (cari_id, tarih, hareket_turu, tutar, aciklama, referans_id)
+                 SELECT s.cari_id, s.tarih, 'SATIS', s.toplam_tutar, s.aciklama, s.id
+                 FROM satislar s
+                 WHERE s.cari_id IS NOT NULL
+                 AND NOT EXISTS (
+                     SELECT 1 FROM cari_hareketler ch
+                     WHERE ch.hareket_turu = 'SATIS' AND ch.referans_id = s.id
+                 )""")
+
+    # Varsayılan gider kalemlerini ekle (yoksa)
+    c.execute("SELECT COUNT(*) FROM gider_kalemleri")
+    if c.fetchone()[0] == 0:
+        varsayilan_giderler = [
+            ("Kompost (13 Ton)", 143000, "Ana üretim malzemesi"),
+            ("Kompost Nakliyesi", 15000, "Taşıma gideri"),
+            ("Toprak (Nakliye Dahil)", 18900, "Örtü toprağı"),
+            ("İlaçlar (Vivando vb.)", 3500, "Koruma ve tedavi"),
+            ("Elektrik ve Su", 20000, "Enerji giderleri"),
+            ("Boş Kasa (900 adet)", 10800, "Toplama kasaları"),
+            ("Kırık Tabak", 12000, "Yedek malzeme"),
+            ("Hafriyat / Çöp Nakliyesi", 8000, "Atık yönetimi"),
+            ("Oda Temizliği", 2250, "İşçilik"),
+            ("Kompost İndirme", 2250, "İşçilik"),
+            ("Baskı İşlemi", 2250, "İşçilik"),
+            ("Toprak İndirme", 2250, "İşçilik"),
+            ("Toprak Serme", 2250, "İşçilik"),
+            ("Odanın Tırmığı", 2250, "İşçilik"),
+            ("Mantar Toplama (Tüm Flaşlar)", 1750, "İşçilik"),
+            ("Oda Boşaltma", 2250, "İşçilik")
+        ]
+        c.executemany("INSERT INTO gider_kalemleri (kalem_adi, birim_fiyat, aciklama) VALUES (?, ?, ?)", 
+                      varsayilan_giderler)
+    
+    conn.commit()
+    conn.close()
+
+def get_db_connection():
+    """Veritabanı bağlantısı al"""
+    return sqlite3.connect(DB_PATH)
+
+# Veritabanını başlat
+init_database()
+
+# Yan menü
+st.sidebar.title("🍄 Mantar İş Takip")
+st.sidebar.markdown("---")
+
+menu = st.sidebar.radio(
+    "Menü",
+    ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi", 
+     "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
+     "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
+     "📥 Veri Yedekleme"]
+)
+
+st.sidebar.markdown("---")
+st.sidebar.info("**Mantar Üretimi İş Takip Sistemi v1.0**")
+
+# Ana Sayfa
+if menu == "🏠 Ana Sayfa":
+    st.title("🍄 Mantar Üretimi İş Takip Sistemi")
+    st.markdown("### Hoş Geldiniz!")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    conn = get_db_connection()
+    
+    # Özet istatistikler
+    with col1:
+        st.metric("Toplam Oda Sayısı", _read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn)['cnt'][0])
+    
+    with col2:
+        bugun_hasat = _read_sql(f"SELECT COALESCE(SUM(hasat_kg), 0) as toplam FROM gunluk_hasat WHERE tarih='{date.today()}'", conn)
+        st.metric("Bugünkü Hasat (kg)", f"{bugun_hasat['toplam'][0]:.2f}")
+    
+    with col3:
+        bu_ay_satis = _read_sql(f"SELECT COALESCE(SUM(toplam_tutar), 0) as toplam FROM satislar WHERE strftime('%Y-%m', tarih)='{date.today().strftime('%Y-%m')}'", conn)
+        st.metric("Bu Ay Satış (TL)", f"{bu_ay_satis['toplam'][0]:,.2f}")
+    
+    conn.close()
+    
+    st.markdown("---")
+    st.markdown("### 📋 Hızlı İşlemler")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.info("**💰 Gider Kalemleri**\nGider kalemlerinizi yönetin")
+    with col2:
+        st.success("**📊 Günlük Hasat**\nHasat verilerinizi girin")
+    with col3:
+        st.warning("**🌡️ İklim Takibi**\nOda iklim verilerini kaydedin")
+
+# Gider Kalemleri
+elif menu == "💰 Gider Kalemleri":
+    st.title("💰 Gider Kalemleri Yönetimi")
+    
+    tab1, tab2 = st.tabs(["📋 Gider Listesi", "➕ Yeni Gider Kalemi"])
+    
+    with tab1:
+        conn = get_db_connection()
+        df_giderler = _read_sql("SELECT * FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
+        conn.close()
+        
+        if not df_giderler.empty:
+            st.dataframe(
+                df_giderler[['kalem_adi', 'birim_fiyat', 'aciklama']].rename(columns={
+                    'kalem_adi': 'Gider Kalemi',
+                    'birim_fiyat': 'Birim Fiyat (TL)',
+                    'aciklama': 'Açıklama'
+                }),
+                use_container_width=True
+            )
+            
+            st.markdown(f"**Toplam: {len(df_giderler)} gider kalemi**")
+            
+            # Düzenleme bölümü
+            st.markdown("---")
+            st.subheader("✏️ Gider Kalemi Düzenle")
+            
+            gider_secim = st.selectbox("Düzenlenecek Gider Kalemi", df_giderler['kalem_adi'].tolist())
+            
+            if gider_secim:
+                secili_gider = df_giderler[df_giderler['kalem_adi'] == gider_secim].iloc[0]
+                _gver = st.session_state.get('gider_ver', 0)
+                _gpfx = f"gd{int(secili_gider['id'])}v{_gver}"
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    yeni_kalem = st.text_input("Kalem Adı", value=str(secili_gider['kalem_adi']), key=f"{_gpfx}_k")
+                    yeni_fiyat = st.number_input("Birim Fiyat (TL)", value=float(secili_gider['birim_fiyat']), min_value=0.0, step=100.0, key=f"{_gpfx}_f")
+                with col2:
+                    yeni_aciklama = st.text_area("Açıklama", value=str(secili_gider['aciklama']) if secili_gider['aciklama'] else "", key=f"{_gpfx}_a")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 Güncelle", type="primary", key="btn_gider_guncelle"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("UPDATE gider_kalemleri SET kalem_adi=?, birim_fiyat=?, aciklama=? WHERE id=?",
+                                (yeni_kalem, yeni_fiyat, yeni_aciklama, int(secili_gider['id'])))
+                        conn.commit()
+                        conn.close()
+                        st.session_state['gider_ver'] = _gver + 1
+                        st.success("✅ Gider kalemi güncellendi!")
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Sil", type="secondary", key="btn_gider_sil"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("UPDATE gider_kalemleri SET aktif=0 WHERE id=?", (int(secili_gider['id']),))
+                        conn.commit()
+                        conn.close()
+                        st.session_state['gider_ver'] = _gver + 1
+                        st.success("✅ Gider kalemi silindi!")
+                        st.rerun()
+        else:
+            st.info("Henüz gider kalemi bulunmuyor.")
+    
+    with tab2:
+        st.subheader("➕ Yeni Gider Kalemi Ekle")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            yeni_kalem = st.text_input("Gider Kalemi Adı *")
+            yeni_fiyat = st.number_input("Birim Fiyat (TL) *", min_value=0.0, step=100.0)
+        
+        with col2:
+            yeni_aciklama = st.text_area("Açıklama", key="yeni_gider_aciklama")
+        
+        if st.button("💾 Kaydet", type="primary"):
+            if yeni_kalem and yeni_fiyat >= 0:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("INSERT INTO gider_kalemleri (kalem_adi, birim_fiyat, aciklama) VALUES (?, ?, ?)",
+                        (yeni_kalem, yeni_fiyat, yeni_aciklama))
+                conn.commit()
+                conn.close()
+                st.success("✅ Yeni gider kalemi eklendi!")
+                st.rerun()
+            else:
+                st.error("❌ Lütfen tüm zorunlu alanları doldurun!")
+
+# Oda Yönetimi
+elif menu == "🏢 Oda Yönetimi":
+    st.title("🏢 Oda Yönetimi")
+    
+    tab1, tab2, tab3 = st.tabs(["📋 Odalar", "➕ Yeni Oda", "💰 Oda Giderleri"])
+    
+    with tab1:
+        conn = get_db_connection()
+        df_odalar = _read_sql("SELECT * FROM odalar ORDER BY oda_adi", conn)
+        conn.close()
+        
+        if not df_odalar.empty:
+            st.dataframe(
+                df_odalar[['oda_adi', 'alan_m2', 'kapasite_kg', 'durum', 'aciklama']].rename(columns={
+                    'oda_adi': 'Oda Adı',
+                    'alan_m2': 'Alan (m²)',
+                    'kapasite_kg': 'Kapasite (kg)',
+                    'durum': 'Durum',
+                    'aciklama': 'Açıklama'
+                }),
+                use_container_width=True
+            )
+            
+            # Düzenleme
+            st.markdown("---")
+            st.subheader("✏️ Oda Düzenle")
+            
+            oda_secim = st.selectbox("Düzenlenecek Oda", df_odalar['oda_adi'].tolist())
+            
+            if oda_secim:
+                secili_oda = df_odalar[df_odalar['oda_adi'] == oda_secim].iloc[0]
+                durum_listesi = ["Aktif", "Hazırlık", "Bakım", "Pasif"]
+                _over = st.session_state.get('oda_ver', 0)
+                _opfx = f"od{int(secili_oda['id'])}v{_over}"
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    yeni_oda_adi = st.text_input("Oda Adı", value=str(secili_oda['oda_adi']), key=f"{_opfx}_adi")
+                    yeni_alan = st.number_input("Alan (m²)", value=float(secili_oda['alan_m2']) if secili_oda['alan_m2'] else 0.0, min_value=0.0, step=1.0, key=f"{_opfx}_alan")
+                    yeni_kapasite = st.number_input("Kapasite (kg)", value=float(secili_oda['kapasite_kg']) if secili_oda['kapasite_kg'] else 0.0, min_value=0.0, step=10.0, key=f"{_opfx}_kap")
+                with col2:
+                    _durum_idx = durum_listesi.index(secili_oda['durum']) if secili_oda['durum'] in durum_listesi else 0
+                    yeni_durum = st.selectbox("Durum", durum_listesi, index=_durum_idx, key=f"{_opfx}_durum")
+                    yeni_aciklama = st.text_area("Açıklama", value=str(secili_oda['aciklama']) if secili_oda['aciklama'] else "", key=f"{_opfx}_acik")
+                
+                if st.button("💾 Oda Bilgilerini Güncelle", type="primary", key="btn_oda_guncelle"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("UPDATE odalar SET oda_adi=?, alan_m2=?, kapasite_kg=?, durum=?, aciklama=? WHERE id=?",
+                            (yeni_oda_adi, yeni_alan, yeni_kapasite, yeni_durum, yeni_aciklama, int(secili_oda['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.session_state['oda_ver'] = _over + 1
+                    st.success("✅ Oda bilgileri güncellendi!")
+                    st.rerun()
+        else:
+            st.info("Henüz oda bulunmuyor.")
+    
+    with tab2:
+        st.subheader("➕ Yeni Oda Ekle")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            oda_adi = st.text_input("Oda Adı *", key="yeni_oda_adi")
+            alan_m2 = st.number_input("Alan (m²)", min_value=0.0, step=1.0, key="yeni_alan_m2")
+        
+        with col2:
+            kapasite_kg = st.number_input("Kapasite (kg)", min_value=0.0, step=10.0, key="yeni_kapasite_kg")
+            durum = st.selectbox("Durum", ["Aktif", "Hazırlık", "Bakım", "Pasif"], key="yeni_oda_durum")
+        
+        aciklama = st.text_area("Açıklama", key="yeni_oda_aciklama")
+        
+        if st.button("💾 Oda Ekle", type="primary"):
+            if oda_adi:
+                conn = get_db_connection()
+                c = conn.cursor()
+                try:
+                    c.execute("INSERT INTO odalar (oda_adi, alan_m2, kapasite_kg, durum, aciklama) VALUES (?, ?, ?, ?, ?)",
+                            (oda_adi, alan_m2, kapasite_kg, durum, aciklama))
+                    conn.commit()
+                    st.success("✅ Yeni oda eklendi!")
+                    st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error("❌ Bu isimde bir oda zaten mevcut!")
+                finally:
+                    conn.close()
+            else:
+                st.error("❌ Oda adı zorunludur!")
+    
+    with tab3:
+        st.subheader("💰 Oda Giderleri Ekle")
+        
+        conn = get_db_connection()
+        df_odalar = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
+        df_giderler = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
+        conn.close()
+        
+        if not df_odalar.empty and not df_giderler.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
+                oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
+                
+                secili_gider = st.selectbox("Gider Kalemi *", df_giderler['kalem_adi'].tolist())
+                varsayilan_tutar = df_giderler[df_giderler['kalem_adi'] == secili_gider]['birim_fiyat'].values[0]
+            
+            with col2:
+                gider_tarih = st.date_input("Tarih *", value=date.today())
+                gider_tutar = st.number_input("Tutar (TL) *", value=float(varsayilan_tutar), min_value=0.0, step=100.0)
+            
+            gider_aciklama = st.text_area("Açıklama")
+            
+            if st.button("💾 Gider Ekle", type="primary"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("INSERT INTO oda_giderleri (oda_id, gider_kalemi, tutar, tarih, aciklama) VALUES (?, ?, ?, ?, ?)",
+                        (int(oda_id), secili_gider, float(gider_tutar), str(gider_tarih), gider_aciklama))
+                conn.commit()
+                conn.close()
+                st.success("✅ Gider kaydedildi!")
+                st.rerun()
+            
+            # Mevcut giderleri göster
+            st.markdown("---")
+            st.subheader("📋 Kayıtlı Giderler")
+            
+            conn = get_db_connection()
+            df_kayitli_giderler = _read_sql("""
+                SELECT og.tarih, o.oda_adi, og.gider_kalemi, og.tutar, og.aciklama
+                FROM oda_giderleri og
+                JOIN odalar o ON og.oda_id = o.id
+                ORDER BY og.tarih DESC
+                LIMIT 20
+            """, conn)
+            conn.close()
+            
+            if not df_kayitli_giderler.empty:
+                st.dataframe(
+                    df_kayitli_giderler.rename(columns={
+                        'tarih': 'Tarih',
+                        'oda_adi': 'Oda',
+                        'gider_kalemi': 'Gider Kalemi',
+                        'tutar': 'Tutar (TL)',
+                        'aciklama': 'Açıklama'
+                    }),
+                    use_container_width=True
+                )
+        else:
+            st.warning("⚠️ Önce oda ve gider kalemleri eklemelisiniz!")
+
+# Günlük Hasat
+elif menu == "📊 Günlük Hasat":
+    st.title("📊 Günlük Hasat Kayıtları")
+    
+    tab1, tab2 = st.tabs(["➕ Hasat Gir", "📋 Hasat Kayıtları"])
+    
+    with tab1:
+        conn = get_db_connection()
+        df_odalar = _read_sql("SELECT id, oda_adi FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
+        conn.close()
+        
+        if not df_odalar.empty:
+            st.subheader("➕ Yeni Hasat Kaydı")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
+                oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
+                hasat_tarih = st.date_input("Tarih *", value=date.today())
+            
+            with col2:
+                hasat_kg = st.number_input("Hasat Miktarı (kg) *", min_value=0.0, step=0.5)
+                kalite = st.selectbox("Kalite", ["A Kalite", "B Kalite", "C Kalite", "Karışık"])
+            
+            hasat_aciklama = st.text_area("Açıklama")
+            
+            if st.button("💾 Hasat Kaydet", type="primary"):
+                if hasat_kg > 0:
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO gunluk_hasat (oda_id, tarih, hasat_kg, kalite, aciklama) VALUES (?, ?, ?, ?, ?)",
+                            (int(oda_id), str(hasat_tarih), float(hasat_kg), kalite, hasat_aciklama))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Hasat kaydedildi!")
+                    st.rerun()
+                else:
+                    st.error("❌ Hasat miktarı 0'dan büyük olmalıdır!")
+        else:
+            st.warning("⚠️ Önce aktif oda eklemelisiniz!")
+    
+    with tab2:
+        st.subheader("📋 Hasat Kayıtları")
+        
+        # Filtreleme
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            tarih_baslangic = st.date_input("Başlangıç Tarihi", value=date.today() - timedelta(days=30))
+        with col2:
+            tarih_bitis = st.date_input("Bitiş Tarihi", value=date.today())
+        with col3:
+            conn = get_db_connection()
+            df_odalar = _read_sql("SELECT DISTINCT oda_adi FROM odalar ORDER BY oda_adi", conn)
+            conn.close()
+            filtre_oda = st.selectbox("Oda Filtresi", ["Tümü"] + df_odalar['oda_adi'].tolist())
+        
+        # Verileri çek
+        conn = get_db_connection()
+        if filtre_oda == "Tümü":
+            df_hasat = _read_sql(f"""
+                SELECT gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
+                FROM gunluk_hasat gh
+                JOIN odalar o ON gh.oda_id = o.id
+                WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
+                ORDER BY gh.tarih DESC, o.oda_adi
+            """, conn)
+        else:
+            df_hasat = _read_sql(f"""
+                SELECT gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
+                FROM gunluk_hasat gh
+                JOIN odalar o ON gh.oda_id = o.id
+                WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
+                AND o.oda_adi = '{filtre_oda}'
+                ORDER BY gh.tarih DESC
+            """, conn)
+        conn.close()
+        
+        if not df_hasat.empty:
+            st.dataframe(
+                df_hasat.rename(columns={
+                    'tarih': 'Tarih',
+                    'oda_adi': 'Oda',
+                    'hasat_kg': 'Hasat (kg)',
+                    'kalite': 'Kalite',
+                    'aciklama': 'Açıklama'
+                }),
+                use_container_width=True
+            )
+            
+            # Özet istatistikler
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Toplam Hasat", f"{df_hasat['hasat_kg'].sum():.2f} kg")
+            with col2:
+                st.metric("Ortalama Günlük", f"{df_hasat['hasat_kg'].mean():.2f} kg")
+            with col3:
+                st.metric("Kayıt Sayısı", len(df_hasat))
+        else:
+            st.info("Seçilen kriterlere uygun hasat kaydı bulunamadı.")
+
+# İklim Verileri
+elif menu == "🌡️ İklim Verileri":
+    st.title("🌡️ İklim Verileri Takibi")
+    
+    tab1, tab2 = st.tabs(["➕ Veri Gir", "📊 İklim Grafikleri"])
+    
+    with tab1:
+        conn = get_db_connection()
+        df_odalar = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
+        conn.close()
+        
+        if not df_odalar.empty:
+            st.subheader("➕ Yeni İklim Verisi")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
+                oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
+                iklim_tarih = st.date_input("Tarih *", value=date.today())
+                iklim_saat = st.time_input("Saat *", value=datetime.now().time())
+            
+            with col2:
+                sicaklik = st.number_input("Sıcaklık (°C)", min_value=-10.0, max_value=50.0, value=20.0, step=0.1)
+                nem = st.number_input("Nem (%)", min_value=0.0, max_value=100.0, value=80.0, step=1.0)
+                co2 = st.number_input("CO₂ (ppm)", min_value=0, max_value=5000, value=800, step=10)
+            
+            iklim_aciklama = st.text_area("Açıklama")
+            
+            if st.button("💾 Veri Kaydet", type="primary"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("INSERT INTO iklim_verileri (oda_id, tarih, saat, sicaklik, nem, co2, aciklama) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (int(oda_id), str(iklim_tarih), str(iklim_saat), float(sicaklik), float(nem), float(co2), iklim_aciklama))
+                conn.commit()
+                conn.close()
+                st.success("✅ İklim verisi kaydedildi!")
+                st.rerun()
+        else:
+            st.warning("⚠️ Önce oda eklemelisiniz!")
+    
+    with tab2:
+        st.subheader("📊 İklim Verileri Grafikleri")
+        
+        conn = get_db_connection()
+        df_odalar = _read_sql("SELECT DISTINCT oda_adi FROM odalar ORDER BY oda_adi", conn)
+        conn.close()
+        
+        if not df_odalar.empty:
+            # Filtreleme
+            col1, col2 = st.columns(2)
+            with col1:
+                grafik_oda = st.selectbox("Oda Seçin", df_odalar['oda_adi'].tolist())
+            with col2:
+                gun_sayisi = st.selectbox("Zaman Aralığı", ["Son 7 Gün", "Son 14 Gün", "Son 30 Gün", "Tümü"])
+            
+            # Veri çek
+            conn = get_db_connection()
+            if gun_sayisi == "Tümü":
+                df_iklim = _read_sql(f"""
+                    SELECT iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2
+                    FROM iklim_verileri iv
+                    JOIN odalar o ON iv.oda_id = o.id
+                    WHERE o.oda_adi = '{grafik_oda}'
+                    ORDER BY iv.tarih, iv.saat
+                """, conn)
+            else:
+                gun = int(gun_sayisi.split()[1])
+                baslangic = date.today() - timedelta(days=gun)
+                df_iklim = _read_sql(f"""
+                    SELECT iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2
+                    FROM iklim_verileri iv
+                    JOIN odalar o ON iv.oda_id = o.id
+                    WHERE o.oda_adi = '{grafik_oda}'
+                    AND iv.tarih >= '{baslangic}'
+                    ORDER BY iv.tarih, iv.saat
+                """, conn)
+            conn.close()
+            
+            if not df_iklim.empty:
+                # Tarih-saat birleştir
+                df_iklim['zaman'] = pd.to_datetime(df_iklim['tarih'] + ' ' + df_iklim['saat'])
+                
+                # Sıcaklık grafiği
+                st.markdown("#### 🌡️ Sıcaklık Grafiği")
+                fig_sicaklik = px.line(df_iklim, x='zaman', y='sicaklik', 
+                                      title=f'{grafik_oda} - Sıcaklık Takibi',
+                                      labels={'zaman': 'Tarih/Saat', 'sicaklik': 'Sıcaklık (°C)'})
+                fig_sicaklik.add_hline(y=15, line_dash="dash", line_color="blue", annotation_text="İdeal Min (15°C)")
+                fig_sicaklik.add_hline(y=22, line_dash="dash", line_color="red", annotation_text="İdeal Max (22°C)")
+                st.plotly_chart(fig_sicaklik, use_container_width=True)
+                
+                # Nem grafiği
+                st.markdown("#### 💧 Nem Grafiği")
+                fig_nem = px.line(df_iklim, x='zaman', y='nem',
+                                 title=f'{grafik_oda} - Nem Takibi',
+                                 labels={'zaman': 'Tarih/Saat', 'nem': 'Nem (%)'})
+                fig_nem.add_hline(y=85, line_dash="dash", line_color="green", annotation_text="İdeal (85%)")
+                st.plotly_chart(fig_nem, use_container_width=True)
+                
+                # CO2 grafiği
+                st.markdown("#### 🌫️ CO₂ Grafiği")
+                fig_co2 = px.line(df_iklim, x='zaman', y='co2',
+                                 title=f'{grafik_oda} - CO₂ Takibi',
+                                 labels={'zaman': 'Tarih/Saat', 'co2': 'CO₂ (ppm)'})
+                fig_co2.add_hline(y=1000, line_dash="dash", line_color="orange", annotation_text="Kritik (1000 ppm)")
+                st.plotly_chart(fig_co2, use_container_width=True)
+                
+                # Özet istatistikler
+                st.markdown("---")
+                st.subheader("📊 Özet İstatistikler")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Ort. Sıcaklık", f"{df_iklim['sicaklik'].mean():.1f} °C")
+                    st.metric("Min Sıcaklık", f"{df_iklim['sicaklik'].min():.1f} °C")
+                    st.metric("Max Sıcaklık", f"{df_iklim['sicaklik'].max():.1f} °C")
+                with col2:
+                    st.metric("Ort. Nem", f"{df_iklim['nem'].mean():.1f} %")
+                    st.metric("Min Nem", f"{df_iklim['nem'].min():.1f} %")
+                    st.metric("Max Nem", f"{df_iklim['nem'].max():.1f} %")
+                with col3:
+                    st.metric("Ort. CO₂", f"{df_iklim['co2'].mean():.0f} ppm")
+                    st.metric("Min CO₂", f"{df_iklim['co2'].min():.0f} ppm")
+                    st.metric("Max CO₂", f"{df_iklim['co2'].max():.0f} ppm")
+            else:
+                st.info("Seçilen oda için iklim verisi bulunamadı.")
+        else:
+            st.warning("⚠️ Önce oda eklemelisiniz!")
+
+# Satış İşlemleri
+elif menu == "💵 Satış İşlemleri":
+    st.title("💵 Satış İşlemleri")
+
+    tab_hesap, tab_tahsilat, tab_yonetim = st.tabs([
+        "📊 Cari Hesap Defteri", "💳 Tahsilat / Ödeme", "🧑 Cari Yönetim"
+    ])
+
+    def _cariler_yukle():
+        conn = get_db_connection()
+        df = _read_sql("SELECT id, cari_adi FROM cariler WHERE aktif=1 ORDER BY cari_adi", conn)
+        conn.close()
+        return df
+
+    # ── TAB 1: CARİ HESAP DEFTERİ (seçim + satış/alış giriş + tablo) ─
+    with tab_hesap:
+        df_cariler_h = _cariler_yukle()
+
+        if df_cariler_h.empty:
+            st.warning("⚠️ Önce Cari Yönetim sekmesinden alıcı ekleyin!")
+        else:
+            col_sec, col_bos = st.columns([2, 3])
+            with col_sec:
+                secili_cari_h = st.selectbox("👤 Cari Seçin", df_cariler_h['cari_adi'].tolist(), key="cari_h_sec")
+            cari_id_h = int(df_cariler_h[df_cariler_h['cari_adi'] == secili_cari_h]['id'].values[0])
+
+            # Bakiye hesapla
+            conn = get_db_connection()
+            df_satilan = _read_sql("""
+                SELECT s.tarih, s.aciklama, s.satis_kg as miktar,
+                       s.birim_fiyat as fiyat, s.toplam_tutar as tutar
+                FROM satislar s WHERE s.cari_id = ?
+                ORDER BY s.tarih ASC, s.id ASC
+            """, conn, params=(cari_id_h,))
+            df_diger = _read_sql("""
+                SELECT tarih, aciklama, tutar, hareket_turu,
+                       COALESCE(miktar, 0) as miktar,
+                       COALESCE(birim_fiyat, 0) as birim_fiyat
+                FROM cari_hareketler
+                WHERE cari_id = ? AND hareket_turu != 'SATIS'
+                ORDER BY tarih ASC, id ASC
+            """, conn, params=(cari_id_h,))
+            conn.close()
+
+            toplam_satis    = float(df_satilan['tutar'].sum())    if not df_satilan.empty else 0.0
+            toplam_alis     = float(df_diger[df_diger['hareket_turu']=='ALIS']['tutar'].sum())     if not df_diger.empty else 0.0
+            toplam_tahsilat = float(df_diger[df_diger['hareket_turu']=='TAHSILAT']['tutar'].sum()) if not df_diger.empty else 0.0
+            toplam_odeme    = float(df_diger[df_diger['hareket_turu']=='ODEME']['tutar'].sum())    if not df_diger.empty else 0.0
+            net = (toplam_satis + toplam_odeme) - (toplam_alis + toplam_tahsilat)
+
+            # Bakiye durumu
+            if net > 0:
+                st.success(f"✅ **{secili_cari_h}** size **{net:,.2f} TL** borçlu")
+            elif net < 0:
+                st.warning(f"⚠️ Siz **{secili_cari_h}**'e **{abs(net):,.2f} TL** borçlusunuz")
+            else:
+                st.info(f"✔️ **{secili_cari_h}** — Bakiye: 0,00 TL")
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📤 Satılan Mal", f"{toplam_satis:,.2f} TL")
+            with col2:
+                st.metric("📥 Alınan Mal", f"{toplam_alis:,.2f} TL")
+            with col3:
+                st.metric("💵 Tahsilat / Ödeme", f"{toplam_tahsilat:,.2f} / {toplam_odeme:,.2f} TL")
+            with col4:
+                if net > 0:
+                    st.metric("BAKİYE", f"{net:,.2f} TL", delta="Borçlu")
+                elif net < 0:
+                    st.metric("BAKİYE", f"{abs(net):,.2f} TL", delta="Siz borçlusunuz", delta_color="inverse")
+                else:
+                    st.metric("BAKİYE", "0,00 TL")
+
+            st.markdown("---")
+
+            # ── Satış Gir / Alış Gir butonları ────────────────────────
+            islem_sec = st.radio(
+                "➕ İşlem Ekle",
+                ["💰 Satış Gir", "🛒 Alış Gir"],
+                horizontal=True,
+                key="islem_sec_radio"
+            )
+
+            if islem_sec == "💰 Satış Gir":
+                conn = get_db_connection()
+                df_odalar = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
+                conn.close()
+
+                if df_odalar.empty:
+                    st.warning("⚠️ Önce oda eklemelisiniz!")
+                else:
+                    with st.container(border=True):
+                        st.markdown(f"**💰 {secili_cari_h} için Satış Girişi**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            secili_oda = st.selectbox("Oda *", df_odalar['oda_adi'].tolist(), key="sh_oda")
+                            oda_id_s = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
+                            satis_tarih = st.date_input("Tarih *", value=date.today(), key="sh_tarih")
+                            satis_kg = st.number_input("Satış Miktarı (kg) *", min_value=0.0, step=0.5, key="sh_kg")
+                        with col2:
+                            birim_fiyat_s = st.number_input("Birim Fiyat (TL/kg) *", min_value=0.0, step=1.0, value=50.0, key="sh_fiyat")
+                            fire_kg_s = st.number_input("Fire (kg)", min_value=0.0, step=0.1, value=0.0, key="sh_fire")
+                            nakliye_s = st.number_input("Nakliye (TL)", min_value=0.0, step=10.0, value=0.0, key="sh_nakliye")
+                            toplam_tutar_s = satis_kg * birim_fiyat_s
+                            st.metric("Toplam Tutar", f"{toplam_tutar_s:,.2f} TL")
+                        satis_aciklama_s = st.text_input("Açıklama", key="sh_acik")
+
+                        if st.button("💾 Satışı Kaydet", type="primary", key="btn_sh_kaydet"):
+                            if satis_kg > 0 and birim_fiyat_s > 0:
+                                conn = get_db_connection()
+                                c = conn.cursor()
+                                c.execute("""INSERT INTO satislar
+                                          (oda_id, cari_id, tarih, alan_kisi, satis_kg, birim_fiyat, toplam_tutar, fire_kg, nakliye_ucreti, aciklama)
+                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                        (int(oda_id_s), cari_id_h, str(satis_tarih), secili_cari_h,
+                                         float(satis_kg), float(birim_fiyat_s), float(toplam_tutar_s),
+                                         float(fire_kg_s), float(nakliye_s), satis_aciklama_s))
+                                ref_id = c.lastrowid
+                                c.execute("""INSERT INTO cari_hareketler (cari_id, tarih, hareket_turu, tutar, aciklama, referans_id)
+                                             VALUES (?, ?, 'SATIS', ?, ?, ?)""",
+                                          (cari_id_h, str(satis_tarih), float(toplam_tutar_s), satis_aciklama_s, ref_id))
+                                conn.commit()
+                                conn.close()
+                                st.success("✅ Satış kaydedildi!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Satış miktarı ve birim fiyat girilmelidir!")
+
+            else:  # Alış Gir
+                with st.container(border=True):
+                    st.markdown(f"**🛒 {secili_cari_h} için Alış Girişi**")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        alis_tarih = st.date_input("Tarih *", value=date.today(), key="ah_tarih")
+                        alis_kalem = st.text_input("Alınan Ürün / Kalem *", key="ah_kalem")
+                        alis_miktar = st.number_input("Miktar *", min_value=0.0, step=0.5, key="ah_miktar")
+                    with col2:
+                        alis_birim_fiyat = st.number_input("Birim Fiyat (TL) *", min_value=0.0, step=1.0, key="ah_birim")
+                        alis_aciklama = st.text_input("Açıklama", key="ah_acik")
+                        alis_toplam = alis_miktar * alis_birim_fiyat
+                        st.metric("Toplam Tutar", f"{alis_toplam:,.2f} TL")
+
+                    if st.button("💾 Alışı Kaydet", type="primary", key="btn_ah_kaydet"):
+                        if alis_kalem and alis_miktar > 0 and alis_birim_fiyat > 0:
+                            acik_full = f"{alis_kalem} ({alis_miktar:g} adet/kg × {alis_birim_fiyat:,.2f} TL)"
+                            if alis_aciklama:
+                                acik_full += f" — {alis_aciklama}"
+                            conn = get_db_connection()
+                            c = conn.cursor()
+                            c.execute("""INSERT INTO cari_hareketler (cari_id, tarih, hareket_turu, miktar, birim_fiyat, tutar, aciklama)
+                                         VALUES (?, ?, 'ALIS', ?, ?, ?, ?)""",
+                                      (cari_id_h, str(alis_tarih), float(alis_miktar), float(alis_birim_fiyat), float(alis_toplam), acik_full))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ Alış kaydedildi! ({alis_kalem}: {alis_miktar:g} × {alis_birim_fiyat:,.2f} = {alis_toplam:,.2f} TL)")
+                            st.rerun()
+                        else:
+                            st.error("❌ Ürün adı, miktar ve birim fiyat girilmelidir!")
+
+            st.markdown("---")
+
+            # ── İki sütunlu cari tablosu ───────────────────────────────
+            col_left, col_right = st.columns(2)
+
+            with col_left:
+                st.markdown("### 📤 SATILAN MAL")
+                st.caption(f"Toplam: **{toplam_satis:,.2f} TL**")
+                if not df_satilan.empty:
+                    df_sat_g = df_satilan.copy()
+                    df_sat_g.columns = ['Tarih', 'Açıklama', 'Miktar (kg)', 'Birim Fiyat', 'Tutar (TL)']
+                    st.dataframe(df_sat_g, use_container_width=True, hide_index=True)
+                    st.markdown(f"**Toplam → {toplam_satis:,.2f} TL**")
+                else:
+                    st.info("Satış kaydı yok")
+
+            with col_right:
+                st.markdown("### 📥 ALINAN MAL & ÖDEMELER")
+                df_alis_rows = df_diger[df_diger['hareket_turu']=='ALIS'][['tarih','aciklama','miktar','birim_fiyat','tutar']].copy()
+                df_alis_rows['miktar_str'] = df_alis_rows.apply(
+                    lambda r: f"{r['miktar']:g} × {r['birim_fiyat']:,.2f}" if r['miktar'] > 0 else "", axis=1
+                )
+                df_alis_display = df_alis_rows[['tarih','aciklama','miktar_str','tutar']].copy()
+                df_alis_display.columns = ['Tarih', 'Açıklama', 'Miktar × Fiyat', 'Tutar (TL)']
+
+                df_nakit_rows = df_diger[df_diger['hareket_turu'].isin(['TAHSILAT','ODEME'])].copy()
+                df_nakit_rows['aciklama'] = df_nakit_rows.apply(
+                    lambda r: f"{'💵 Tahsilat' if r['hareket_turu']=='TAHSILAT' else '💸 Ödeme'} — {r['aciklama']}" if r['aciklama'] else ('💵 Tahsilat' if r['hareket_turu']=='TAHSILAT' else '💸 Ödeme'), axis=1
+                )
+                df_nakit_rows = df_nakit_rows[['tarih','aciklama','tutar']].copy()
+                df_nakit_rows.insert(2, 'Miktar × Fiyat', '')
+                df_nakit_rows.columns = ['Tarih', 'Açıklama', 'Miktar × Fiyat', 'Tutar (TL)']
+
+                df_sag = pd.concat([df_alis_display, df_nakit_rows], ignore_index=True)
+                if not df_sag.empty:
+                    df_sag = df_sag.sort_values('Tarih').reset_index(drop=True)
+                    toplam_sag = toplam_alis + toplam_tahsilat + toplam_odeme
+                    st.caption(f"Alış: **{toplam_alis:,.2f} TL** | Tahsilat: **{toplam_tahsilat:,.2f} TL** | Ödeme: **{toplam_odeme:,.2f} TL**")
+                    st.dataframe(df_sag, use_container_width=True, hide_index=True)
+                    st.markdown(f"**Toplam → {toplam_sag:,.2f} TL**")
+                else:
+                    st.info("Alış / ödeme kaydı yok")
+
+            # ── Kronolojik ekstre ─────────────────────────────────────
+            st.markdown("---")
+            st.markdown("### 📋 Tüm Hareketler (Kronolojik Ekstre)")
+            ekstre_rows = []
+            for _, r in df_satilan.iterrows():
+                miktar_str = f"{r['miktar']:g} kg" if r['miktar'] and r['miktar'] > 0 else ""
+                ekstre_rows.append({'Tarih': r['tarih'], 'Tür': '💰 Satış', 'Miktar': miktar_str,
+                                    'Açıklama': r['aciklama'],
+                                    'Borç (TL)': r['tutar'], 'Alacak (TL)': 0.0})
+            for _, r in df_diger.iterrows():
+                tur_adi = {'ALIS':'🛒 Alış','TAHSILAT':'💵 Tahsilat','ODEME':'💸 Ödeme'}.get(r['hareket_turu'], r['hareket_turu'])
+                miktar_str = f"{r['miktar']:g} × {r['birim_fiyat']:,.2f}" if r.get('miktar', 0) and r['miktar'] > 0 else ""
+                if r['hareket_turu'] == 'ODEME':
+                    ekstre_rows.append({'Tarih': r['tarih'], 'Tür': tur_adi, 'Miktar': miktar_str,
+                                        'Açıklama': r['aciklama'],
+                                        'Borç (TL)': r['tutar'], 'Alacak (TL)': 0.0})
+                else:
+                    ekstre_rows.append({'Tarih': r['tarih'], 'Tür': tur_adi, 'Miktar': miktar_str,
+                                        'Açıklama': r['aciklama'],
+                                        'Borç (TL)': 0.0, 'Alacak (TL)': r['tutar']})
+            if ekstre_rows:
+                df_ekstre = pd.DataFrame(ekstre_rows).sort_values('Tarih').reset_index(drop=True)
+                bak, bakiyeler = 0.0, []
+                for _, row in df_ekstre.iterrows():
+                    bak += row['Borç (TL)'] - row['Alacak (TL)']
+                    bakiyeler.append(round(bak, 2))
+                df_ekstre['Bakiye (TL)'] = bakiyeler
+                # Sütun sırası: Tarih, Tür, Miktar, Açıklama, Borç, Alacak, Bakiye
+                df_ekstre = df_ekstre[['Tarih', 'Tür', 'Miktar', 'Açıklama', 'Borç (TL)', 'Alacak (TL)', 'Bakiye (TL)']]
+                st.dataframe(df_ekstre, use_container_width=True, hide_index=True)
+            else:
+                st.info("Bu cariye ait hareket kaydı yok.")
+
+    # ── TAB 2: TAHSİLAT / ÖDEME ───────────────────────────────────────
+    with tab_tahsilat:
+        df_cariler_t3 = _cariler_yukle()
+        st.subheader("💳 Tahsilat / Ödeme")
+        st.caption("**Tahsilat**: Karşı taraf size nakit ödedi  |  **Ödeme**: Siz karşı tarafa nakit ödediniz")
+
+        if df_cariler_t3.empty:
+            st.warning("⚠️ Önce Cari Yönetim sekmesinden cari ekleyin!")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                secili_cari_t = st.selectbox("Cari *", df_cariler_t3['cari_adi'].tolist(), key="t1_cari")
+                cari_id_t = int(df_cariler_t3[df_cariler_t3['cari_adi'] == secili_cari_t]['id'].values[0])
+                tahsilat_tarih = st.date_input("Tarih *", value=date.today(), key="t1_tarih")
+            with col2:
+                hareket_turu_sec = st.radio(
+                    "İşlem Türü *",
+                    ["💵 Tahsilat (onlar bize ödedi)", "💸 Ödeme (biz onlara ödedik)"],
+                    key="t1_tur"
+                )
+                hareket_kodu = "TAHSILAT" if hareket_turu_sec.startswith("💵") else "ODEME"
+                tahsilat_tutar = st.number_input("Tutar (TL) *", min_value=0.0, step=1.0, key="t1_tutar")
+            tahsilat_aciklama = st.text_area("Açıklama", key="t1_acik")
+
+            if st.button("💾 Kaydet", type="primary", key="btn_t1_kaydet"):
+                if tahsilat_tutar > 0:
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("""INSERT INTO cari_hareketler (cari_id, tarih, hareket_turu, tutar, aciklama)
+                                 VALUES (?, ?, ?, ?, ?)""",
+                              (cari_id_t, str(tahsilat_tarih), hareket_kodu,
+                               float(tahsilat_tutar), tahsilat_aciklama))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Kayıt eklendi!")
+                    st.rerun()
+                else:
+                    st.error("❌ Tutar girilmelidir!")
+
+    # ── TAB 3: CARİ YÖNETİM ───────────────────────────────────────────
+    with tab_yonetim:
+        st.subheader("🧑 Cari Yönetim")
+
+        cari_tab1, cari_tab2 = st.tabs(["📋 Cariler", "➕ Yeni Cari"])
+
+        with cari_tab1:
+            conn = get_db_connection()
+            df_tm_cariler = _read_sql("SELECT * FROM cariler WHERE aktif=1 ORDER BY cari_adi", conn)
+            conn.close()
+
+            if not df_tm_cariler.empty:
+                st.dataframe(
+                    df_tm_cariler[['cari_adi','telefon','adres','aciklama']].rename(columns={
+                        'cari_adi':'Cari Adı','telefon':'Telefon',
+                        'adres':'Adres','aciklama':'Açıklama'
+                    }),
+                    use_container_width=True
+                )
+                st.markdown("---")
+                st.markdown("**✏️ Cari Düzenle**")
+                cari_duzenle_sec = st.selectbox("Düzenlenecek Cari", df_tm_cariler['cari_adi'].tolist())
+                secili_c = df_tm_cariler[df_tm_cariler['cari_adi'] == cari_duzenle_sec].iloc[0]
+                _cver = st.session_state.get('cari_ver', 0)
+                _cpfx = f"cr{int(secili_c['id'])}v{_cver}"
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    yeni_cari_adi  = st.text_input("Cari Adı",  value=str(secili_c['cari_adi']),  key=f"{_cpfx}_adi")
+                    yeni_cari_tel  = st.text_input("Telefon",    value=str(secili_c['telefon'])  if secili_c['telefon']  else "", key=f"{_cpfx}_tel")
+                with col2:
+                    yeni_cari_adres = st.text_input("Adres",    value=str(secili_c['adres'])    if secili_c['adres']    else "", key=f"{_cpfx}_adr")
+                    yeni_cari_acik  = st.text_area("Açıklama",  value=str(secili_c['aciklama']) if secili_c['aciklama'] else "", key=f"{_cpfx}_ac")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 Güncelle", type="primary", key="btn_cari_guncelle"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("UPDATE cariler SET cari_adi=?, telefon=?, adres=?, aciklama=? WHERE id=?",
+                                  (yeni_cari_adi, yeni_cari_tel, yeni_cari_adres, yeni_cari_acik, int(secili_c['id'])))
+                        c.execute("UPDATE satislar SET alan_kisi=? WHERE cari_id=?",
+                                  (yeni_cari_adi, int(secili_c['id'])))
+                        conn.commit()
+                        conn.close()
+                        st.session_state['cari_ver'] = _cver + 1
+                        st.success("✅ Cari güncellendi!")
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Sil (Pasif Yap)", type="secondary", key="btn_cari_sil"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("UPDATE cariler SET aktif=0 WHERE id=?", (int(secili_c['id']),))
+                        conn.commit()
+                        conn.close()
+                        st.session_state['cari_ver'] = _cver + 1
+                        st.success("✅ Cari pasif edildi!")
+                        st.rerun()
+            else:
+                st.info("Henüz cari kaydı yok.")
+
+        with cari_tab2:
+            st.markdown("**➕ Yeni Alıcı / Cari Ekle**")
+            col1, col2 = st.columns(2)
+            with col1:
+                yeni_c_adi  = st.text_input("Cari Adı *", key="nc_adi")
+                yeni_c_tel  = st.text_input("Telefon",    key="nc_tel")
+            with col2:
+                yeni_c_adres = st.text_input("Adres",     key="nc_adres")
+                yeni_c_acik  = st.text_area("Açıklama",   key="nc_acik")
+
+            if st.button("💾 Cari Ekle", type="primary"):
+                if yeni_c_adi:
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO cariler (cari_adi, telefon, adres, aciklama) VALUES (?, ?, ?, ?)",
+                              (yeni_c_adi, yeni_c_tel, yeni_c_adres, yeni_c_acik))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"✅ '{yeni_c_adi}' carisi eklendi!")
+                    st.rerun()
+                else:
+                    st.error("❌ Cari adı zorunludur!")
+
+# Raporlar ve Grafikler
+elif menu == "📈 Raporlar ve Grafikler":
+    st.title("📈 Raporlar ve Grafikler")
+    
+    tab1, tab2, tab3 = st.tabs(["📊 Hasat Analizi", "💰 Satış Analizi", "🏢 Oda Performansı"])
+    
+    with tab1:
+        st.subheader("📊 Hasat Analizi")
+        
+        # Tarih aralığı
+        col1, col2 = st.columns(2)
+        with col1:
+            baslangic = st.date_input("Başlangıç", value=date.today() - timedelta(days=30), key="hasat_rp_baslangic")
+        with col2:
+            bitis = st.date_input("Bitiş", value=date.today(), key="hasat_rp_bitis")
+        
+        conn = get_db_connection()
+        df_hasat_analiz = _read_sql(f"""
+            SELECT gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite
+            FROM gunluk_hasat gh
+            JOIN odalar o ON gh.oda_id = o.id
+            WHERE gh.tarih BETWEEN '{baslangic}' AND '{bitis}'
+            ORDER BY gh.tarih
+        """, conn)
+        conn.close()
+        
+        if not df_hasat_analiz.empty:
+            # Günlük toplam hasat grafiği
+            daily_hasat = df_hasat_analiz.groupby('tarih')['hasat_kg'].sum().reset_index()
+            fig_daily = px.bar(daily_hasat, x='tarih', y='hasat_kg',
+                              title='Günlük Toplam Hasat',
+                              labels={'tarih': 'Tarih', 'hasat_kg': 'Hasat (kg)'})
+            st.plotly_chart(fig_daily, use_container_width=True)
+            
+            # Oda bazında hasat
+            oda_hasat = df_hasat_analiz.groupby('oda_adi')['hasat_kg'].sum().reset_index()
+            fig_oda = px.pie(oda_hasat, values='hasat_kg', names='oda_adi',
+                            title='Oda Bazında Toplam Hasat')
+            st.plotly_chart(fig_oda, use_container_width=True)
+            
+            # Kalite dağılımı
+            if 'kalite' in df_hasat_analiz.columns:
+                kalite_dagilim = df_hasat_analiz.groupby('kalite')['hasat_kg'].sum().reset_index()
+                fig_kalite = px.bar(kalite_dagilim, x='kalite', y='hasat_kg',
+                                   title='Kalite Bazında Hasat Dağılımı',
+                                   labels={'kalite': 'Kalite', 'hasat_kg': 'Hasat (kg)'})
+                st.plotly_chart(fig_kalite, use_container_width=True)
+        else:
+            st.info("Seçilen tarih aralığında hasat verisi bulunamadı.")
+    
+    with tab2:
+        st.subheader("💰 Satış Analizi")
+        
+        # Tarih aralığı
+        col1, col2 = st.columns(2)
+        with col1:
+            baslangic_satis = st.date_input("Başlangıç", value=date.today() - timedelta(days=30), key="satis_rp_baslangic")
+        with col2:
+            bitis_satis = st.date_input("Bitiş", value=date.today(), key="satis_rp_bitis")
+        
+        conn = get_db_connection()
+        df_satis_analiz = _read_sql(f"""
+            SELECT s.tarih, o.oda_adi, s.alan_kisi, s.satis_kg, s.toplam_tutar, s.fire_kg
+            FROM satislar s
+            JOIN odalar o ON s.oda_id = o.id
+            WHERE s.tarih BETWEEN '{baslangic_satis}' AND '{bitis_satis}'
+            ORDER BY s.tarih
+        """, conn)
+        conn.close()
+        
+        if not df_satis_analiz.empty:
+            # Günlük satış geliri
+            daily_satis = df_satis_analiz.groupby('tarih')['toplam_tutar'].sum().reset_index()
+            fig_satis = px.line(daily_satis, x='tarih', y='toplam_tutar',
+                               title='Günlük Satış Geliri',
+                               labels={'tarih': 'Tarih', 'toplam_tutar': 'Gelir (TL)'})
+            st.plotly_chart(fig_satis, use_container_width=True)
+            
+            # Müşteri bazında satış
+            musteri_satis = df_satis_analiz.groupby('alan_kisi')['toplam_tutar'].sum().reset_index().sort_values('toplam_tutar', ascending=False).head(10)
+            fig_musteri = px.bar(musteri_satis, x='alan_kisi', y='toplam_tutar',
+                                title='En Çok Satış Yapılan Müşteriler (Top 10)',
+                                labels={'alan_kisi': 'Müşteri', 'toplam_tutar': 'Toplam Satış (TL)'})
+            st.plotly_chart(fig_musteri, use_container_width=True)
+            
+            # Fire analizi
+            if df_satis_analiz['fire_kg'].sum() > 0:
+                oda_fire = df_satis_analiz.groupby('oda_adi')['fire_kg'].sum().reset_index()
+                fig_fire = px.bar(oda_fire, x='oda_adi', y='fire_kg',
+                                 title='Oda Bazında Toplam Fire',
+                                 labels={'oda_adi': 'Oda', 'fire_kg': 'Fire (kg)'})
+                st.plotly_chart(fig_fire, use_container_width=True)
+        else:
+            st.info("Seçilen tarih aralığında satış verisi bulunamadı.")
+    
+    with tab3:
+        st.subheader("🏢 Oda Performans Analizi")
+        
+        conn = get_db_connection()
+        
+        # Oda bazında toplam hasat ve satış
+        df_oda_perf = _read_sql("""
+            SELECT 
+                o.oda_adi,
+                COALESCE(SUM(gh.hasat_kg), 0) as toplam_hasat,
+                COALESCE(SUM(s.satis_kg), 0) as toplam_satis,
+                COALESCE(SUM(s.toplam_tutar), 0) as toplam_gelir,
+                COALESCE(SUM(og.tutar), 0) as toplam_gider
+            FROM odalar o
+            LEFT JOIN gunluk_hasat gh ON o.id = gh.oda_id
+            LEFT JOIN satislar s ON o.id = s.oda_id
+            LEFT JOIN oda_giderleri og ON o.id = og.oda_id
+            GROUP BY o.oda_adi
+        """, conn)
+        conn.close()
+        
+        if not df_oda_perf.empty:
+            df_oda_perf['net_kar'] = df_oda_perf['toplam_gelir'] - df_oda_perf['toplam_gider']
+            
+            # Oda performans tablosu
+            st.dataframe(
+                df_oda_perf.rename(columns={
+                    'oda_adi': 'Oda',
+                    'toplam_hasat': 'Toplam Hasat (kg)',
+                    'toplam_satis': 'Toplam Satış (kg)',
+                    'toplam_gelir': 'Toplam Gelir (TL)',
+                    'toplam_gider': 'Toplam Gider (TL)',
+                    'net_kar': 'Net Kâr (TL)'
+                }),
+                use_container_width=True
+            )
+            
+            # Gelir-Gider karşılaştırması
+            fig_gelir_gider = go.Figure()
+            fig_gelir_gider.add_trace(go.Bar(name='Gelir', x=df_oda_perf['oda_adi'], y=df_oda_perf['toplam_gelir']))
+            fig_gelir_gider.add_trace(go.Bar(name='Gider', x=df_oda_perf['oda_adi'], y=df_oda_perf['toplam_gider']))
+            fig_gelir_gider.update_layout(title='Oda Bazında Gelir-Gider Karşılaştırması',
+                                         barmode='group',
+                                         xaxis_title='Oda',
+                                         yaxis_title='Tutar (TL)')
+            st.plotly_chart(fig_gelir_gider, use_container_width=True)
+            
+            # Net kâr grafiği
+            fig_kar = px.bar(df_oda_perf, x='oda_adi', y='net_kar',
+                            title='Oda Bazında Net Kâr',
+                            labels={'oda_adi': 'Oda', 'net_kar': 'Net Kâr (TL)'},
+                            color='net_kar',
+                            color_continuous_scale=['red', 'yellow', 'green'])
+            st.plotly_chart(fig_kar, use_container_width=True)
+        else:
+            st.info("Henüz performans verisi bulunmuyor.")
+
+# İşçi Puantaj
+elif menu == "👷 İşçi Puantaj":
+    st.title("👷 İşçi Puantaj Sistemi")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["👥 İşçi Listesi", "➕ İşçi Ekle", "📅 Puantaj Gir", "📊 Puantaj Raporları"])
+    
+    with tab1:
+        st.subheader("👥 Kayıtlı İşçiler")
+        
+        conn = get_db_connection()
+        df_isciler = _read_sql("SELECT * FROM isciler WHERE aktif=1 ORDER BY ad_soyad", conn)
+        conn.close()
+        
+        if not df_isciler.empty:
+            st.dataframe(
+                df_isciler[['ad_soyad', 'telefon', 'pozisyon', 'gunluk_ucret', 'saat_ucreti']].rename(columns={
+                    'ad_soyad': 'Ad Soyad',
+                    'telefon': 'Telefon',
+                    'pozisyon': 'Pozisyon',
+                    'gunluk_ucret': 'Günlük Ücret (TL)',
+                    'saat_ucreti': 'Saat Ücreti (TL)'
+                }),
+                use_container_width=True
+            )
+            
+            # Düzenleme
+            st.markdown("---")
+            st.subheader("✏️ İşçi Düzenle")
+            
+            isci_secim = st.selectbox("Düzenlenecek İşçi", df_isciler['ad_soyad'].tolist())
+            
+            if isci_secim:
+                secili_isci = df_isciler[df_isciler['ad_soyad'] == isci_secim].iloc[0]
+                _iver = st.session_state.get('isci_ver', 0)
+                _ipfx = f"is{int(secili_isci['id'])}v{_iver}"
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    yeni_ad = st.text_input("Ad Soyad", value=str(secili_isci['ad_soyad']), key=f"{_ipfx}_ad")
+                    yeni_telefon = st.text_input("Telefon", value=str(secili_isci['telefon']) if secili_isci['telefon'] else "", key=f"{_ipfx}_tel")
+                    yeni_pozisyon = st.text_input("Pozisyon", value=str(secili_isci['pozisyon']) if secili_isci['pozisyon'] else "", key=f"{_ipfx}_poz")
+                with col2:
+                    yeni_gunluk = st.number_input("Günlük Ücret (TL)", value=float(secili_isci['gunluk_ucret']), min_value=0.0, step=50.0, key=f"{_ipfx}_gun")
+                    yeni_saat = st.number_input("Saat Ücreti (TL)", value=float(secili_isci['saat_ucreti']), min_value=0.0, step=5.0, key=f"{_ipfx}_sat")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("💾 Güncelle", type="primary", key="btn_isci_guncelle"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("UPDATE isciler SET ad_soyad=?, telefon=?, pozisyon=?, gunluk_ucret=?, saat_ucreti=? WHERE id=?",
+                                (yeni_ad, yeni_telefon, yeni_pozisyon, yeni_gunluk, yeni_saat, int(secili_isci['id'])))
+                        conn.commit()
+                        conn.close()
+                        st.session_state['isci_ver'] = _iver + 1
+                        st.success("✅ İşçi bilgileri güncellendi!")
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Sil (Pasif Yap)", type="secondary", key="btn_isci_sil"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("UPDATE isciler SET aktif=0 WHERE id=?", (int(secili_isci['id']),))
+                        conn.commit()
+                        conn.close()
+                        st.session_state['isci_ver'] = _iver + 1
+                        st.success("✅ İşçi pasif edildi!")
+                        st.rerun()
+        else:
+            st.info("Henüz işçi kaydı bulunmuyor.")
+    
+    with tab2:
+        st.subheader("➕ Yeni İşçi Ekle")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ad_soyad = st.text_input("Ad Soyad *", key="yeni_ad_soyad")
+            telefon = st.text_input("Telefon", key="yeni_telefon")
+            pozisyon = st.text_input("Pozisyon", placeholder="Örn: Hasat İşçisi, Teknik Eleman", key="yeni_pozisyon")
+        
+        with col2:
+            gunluk_ucret = st.number_input("Günlük Ücret (TL)", min_value=0.0, step=50.0, value=500.0, key="yeni_gunluk_ucret")
+            saat_ucreti = st.number_input("Saat Ücreti (TL)", min_value=0.0, step=5.0, value=50.0, key="yeni_saat_ucreti")
+            st.info("💡 Günlük ücret veya saat ücreti girebilirsiniz")
+        
+        if st.button("💾 İşçi Ekle", type="primary"):
+            if ad_soyad:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("INSERT INTO isciler (ad_soyad, telefon, pozisyon, gunluk_ucret, saat_ucreti) VALUES (?, ?, ?, ?, ?)",
+                        (ad_soyad, telefon, pozisyon, gunluk_ucret, saat_ucreti))
+                conn.commit()
+                conn.close()
+                st.success("✅ Yeni işçi eklendi!")
+                st.rerun()
+            else:
+                st.error("❌ Ad Soyad zorunludur!")
+    
+    with tab3:
+        st.subheader("📅 Günlük Puantaj Kaydı")
+        
+        conn = get_db_connection()
+        df_isciler = _read_sql("SELECT id, ad_soyad FROM isciler WHERE aktif=1 ORDER BY ad_soyad", conn)
+        conn.close()
+        
+        if not df_isciler.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                secili_isci = st.selectbox("İşçi Seçin *", df_isciler['ad_soyad'].tolist())
+                isci_id = df_isciler[df_isciler['ad_soyad'] == secili_isci]['id'].values[0]
+                
+                puantaj_tarih = st.date_input("Tarih *", value=date.today())
+                tatil_gun = st.checkbox("🏖️ Tatil / İzin Günü")
+            
+            with col2:
+                if tatil_gun:
+                    giris_saati = None
+                    cikis_saati = None
+                    toplam_saat = 0.0
+                    mesai_saati = 0.0
+                    st.info("🏖️ Tatil veya izin günü olarak kaydedilecek.")
+                else:
+                    giris_saati = st.time_input("Giriş Saati", value=datetime.strptime("08:00", "%H:%M").time())
+                    cikis_saati = st.time_input("Çıkış Saati", value=datetime.strptime("17:00", "%H:%M").time())
+                    giris_dt = datetime.combine(date.today(), giris_saati)
+                    cikis_dt = datetime.combine(date.today(), cikis_saati)
+                    toplam_saat = (cikis_dt - giris_dt).seconds / 3600
+                    st.metric("Toplam Çalışma Saati", f"{toplam_saat:.1f} saat")
+                    mesai_saati = st.number_input("Mesai Saati", min_value=0.0, step=0.5, value=0.0)
+                    st.info(f"💡 Normal: {toplam_saat - mesai_saati:.1f} saat, Mesai: {mesai_saati:.1f} saat")
+            
+            puantaj_aciklama = st.text_area("Açıklama", placeholder="Örn: İlave mesai, erken çıkış, tatil, vb.")
+            
+            if st.button("💾 Puantaj Kaydet", type="primary"):
+                if tatil_gun or toplam_saat > 0:
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("""INSERT INTO puantaj (isci_id, tarih, giris_saati, cikis_saati, toplam_saat, mesai_saati, tatil, aciklama) 
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (int(isci_id), str(puantaj_tarih),
+                             str(giris_saati) if giris_saati else None,
+                             str(cikis_saati) if cikis_saati else None,
+                             float(toplam_saat), float(mesai_saati), 1 if tatil_gun else 0, puantaj_aciklama))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Puantaj kaydedildi!")
+                    st.rerun()
+                else:
+                    st.error("❌ Çalışma saati 0'dan büyük olmalıdır!")
+            
+            # Son kayıtlar
+            st.markdown("---")
+            st.subheader("📋 Son Puantaj Kayıtları")
+            
+            conn = get_db_connection()
+            df_son_puantaj = _read_sql("""
+                SELECT p.tarih, i.ad_soyad, p.tatil, p.giris_saati, p.cikis_saati, p.toplam_saat, p.mesai_saati, p.aciklama
+                FROM puantaj p
+                JOIN isciler i ON p.isci_id = i.id
+                ORDER BY p.tarih DESC, i.ad_soyad
+                LIMIT 20
+            """, conn)
+            conn.close()
+            
+            if not df_son_puantaj.empty:
+                df_son_puantaj['tatil'] = df_son_puantaj['tatil'].apply(lambda x: '🏖️ Tatil' if x == 1 else '✅ Çalışma')
+                st.dataframe(
+                    df_son_puantaj.rename(columns={
+                        'tarih': 'Tarih',
+                        'ad_soyad': 'İşçi',
+                        'tatil': 'Durum',
+                        'giris_saati': 'Giriş',
+                        'cikis_saati': 'Çıkış',
+                        'toplam_saat': 'Toplam Saat',
+                        'mesai_saati': 'Mesai',
+                        'aciklama': 'Açıklama'
+                    }),
+                    use_container_width=True
+                )
+        else:
+            st.warning("⚠️ Önce işçi eklemelisiniz!")
+    
+    with tab4:
+        st.subheader("📊 Puantaj Raporları")
+        
+        # Tarih aralığı
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            rapor_baslangic = st.date_input("Başlangıç Tarihi", value=date.today().replace(day=1), key="puantaj_baslangic")
+        with col2:
+            rapor_bitis = st.date_input("Bitiş Tarihi", value=date.today(), key="puantaj_bitis")
+        with col3:
+            conn = get_db_connection()
+            df_isciler_rapor = _read_sql("SELECT DISTINCT ad_soyad FROM isciler ORDER BY ad_soyad", conn)
+            conn.close()
+            filtre_isci = st.selectbox("İşçi Filtresi", ["Tümü"] + df_isciler_rapor['ad_soyad'].tolist())
+        
+        # Verileri çek
+        conn = get_db_connection()
+        if filtre_isci == "Tümü":
+            df_puantaj_rapor = _read_sql(f"""
+                SELECT i.ad_soyad, i.pozisyon, i.gunluk_ucret, i.saat_ucreti,
+                       COUNT(DISTINCT CASE WHEN COALESCE(p.tatil,0)=0 THEN p.tarih END) as gun_sayisi,
+                       COALESCE(SUM(CASE WHEN COALESCE(p.tatil,0)=0 THEN p.toplam_saat ELSE 0 END), 0) as toplam_calisma_saati,
+                       COALESCE(SUM(CASE WHEN COALESCE(p.tatil,0)=0 THEN p.mesai_saati ELSE 0 END), 0) as toplam_mesai_saati,
+                       COUNT(DISTINCT CASE WHEN p.tatil=1 THEN p.tarih END) as tatil_gun_sayisi
+                FROM isciler i
+                LEFT JOIN puantaj p ON i.id = p.isci_id AND p.tarih BETWEEN '{rapor_baslangic}' AND '{rapor_bitis}'
+                WHERE i.aktif = 1
+                GROUP BY i.id, i.ad_soyad
+            """, conn)
+        else:
+            df_puantaj_rapor = _read_sql(f"""
+                SELECT i.ad_soyad, i.pozisyon, i.gunluk_ucret, i.saat_ucreti,
+                       COUNT(DISTINCT CASE WHEN COALESCE(p.tatil,0)=0 THEN p.tarih END) as gun_sayisi,
+                       COALESCE(SUM(CASE WHEN COALESCE(p.tatil,0)=0 THEN p.toplam_saat ELSE 0 END), 0) as toplam_calisma_saati,
+                       COALESCE(SUM(CASE WHEN COALESCE(p.tatil,0)=0 THEN p.mesai_saati ELSE 0 END), 0) as toplam_mesai_saati,
+                       COUNT(DISTINCT CASE WHEN p.tatil=1 THEN p.tarih END) as tatil_gun_sayisi
+                FROM isciler i
+                LEFT JOIN puantaj p ON i.id = p.isci_id AND p.tarih BETWEEN '{rapor_baslangic}' AND '{rapor_bitis}'
+                WHERE i.aktif = 1 AND i.ad_soyad = '{filtre_isci}'
+                GROUP BY i.id, i.ad_soyad
+            """, conn)
+        conn.close()
+        
+        if not df_puantaj_rapor.empty:
+            # Ücret hesaplama
+            df_puantaj_rapor['toplam_calisma_saati'] = df_puantaj_rapor['toplam_calisma_saati'].fillna(0)
+            df_puantaj_rapor['toplam_mesai_saati'] = df_puantaj_rapor['toplam_mesai_saati'].fillna(0)
+            df_puantaj_rapor['gun_sayisi'] = df_puantaj_rapor['gun_sayisi'].fillna(0)
+            df_puantaj_rapor['tatil_gun_sayisi'] = df_puantaj_rapor['tatil_gun_sayisi'].fillna(0)
+            
+            # Günlük ücret varsa o, yoksa saat ücretinden hesapla
+            df_puantaj_rapor['tahmini_ucret'] = df_puantaj_rapor.apply(
+                lambda row: (row['gun_sayisi'] * row['gunluk_ucret']) if row['gunluk_ucret'] > 0 
+                else (row['toplam_calisma_saati'] * row['saat_ucreti']), axis=1
+            )
+            
+            df_puantaj_rapor['mesai_ucreti'] = df_puantaj_rapor['toplam_mesai_saati'] * df_puantaj_rapor['saat_ucreti'] * 1.5
+            df_puantaj_rapor['toplam_ucret'] = df_puantaj_rapor['tahmini_ucret'] + df_puantaj_rapor['mesai_ucreti']
+            
+            # Rapor tablosu
+            st.dataframe(
+                df_puantaj_rapor[['ad_soyad', 'pozisyon', 'gun_sayisi', 'tatil_gun_sayisi', 'toplam_calisma_saati', 
+                                 'toplam_mesai_saati', 'tahmini_ucret', 'mesai_ucreti', 'toplam_ucret']].rename(columns={
+                    'ad_soyad': 'İşçi',
+                    'pozisyon': 'Pozisyon',
+                    'gun_sayisi': 'Çalışma Günü',
+                    'tatil_gun_sayisi': 'Tatil/İzin Günü',
+                    'toplam_calisma_saati': 'Toplam Saat',
+                    'toplam_mesai_saati': 'Mesai Saati',
+                    'tahmini_ucret': 'Normal Ücret (TL)',
+                    'mesai_ucreti': 'Mesai Ücreti (TL)',
+                    'toplam_ucret': 'Toplam Ücret (TL)'
+                }),
+                use_container_width=True
+            )
+            
+            # Özet istatistikler
+            st.markdown("---")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Toplam İşçi", len(df_puantaj_rapor))
+            with col2:
+                st.metric("Toplam Çalışma Saati", f"{df_puantaj_rapor['toplam_calisma_saati'].sum():.1f}")
+            with col3:
+                st.metric("Toplam Mesai Saati", f"{df_puantaj_rapor['toplam_mesai_saati'].sum():.1f}")
+            with col4:
+                st.metric("Toplam İşçilik Maliyeti", f"{df_puantaj_rapor['toplam_ucret'].sum():,.2f} TL")
+            
+            # Grafikler
+            st.markdown("---")
+            
+            # İşçi bazında çalışma saati
+            fig_isci_saat = px.bar(df_puantaj_rapor, x='ad_soyad', y='toplam_calisma_saati',
+                                  title='İşçi Bazında Toplam Çalışma Saati',
+                                  labels={'ad_soyad': 'İşçi', 'toplam_calisma_saati': 'Saat'})
+            st.plotly_chart(fig_isci_saat, use_container_width=True)
+            
+            # İşçi bazında ücret dağılımı
+            fig_isci_ucret = px.bar(df_puantaj_rapor, x='ad_soyad', y='toplam_ucret',
+                                   title='İşçi Bazında Ücret Dağılımı',
+                                   labels={'ad_soyad': 'İşçi', 'toplam_ucret': 'Toplam Ücret (TL)'})
+            st.plotly_chart(fig_isci_ucret, use_container_width=True)
+            
+            # Detaylı günlük puantaj
+            if filtre_isci != "Tümü":
+                st.markdown("---")
+                st.subheader(f"📅 {filtre_isci} - Günlük Detay")
+                
+                conn = get_db_connection()
+                df_detay = _read_sql(f"""
+                    SELECT p.tarih, p.tatil, p.giris_saati, p.cikis_saati, p.toplam_saat, p.mesai_saati, p.aciklama
+                    FROM puantaj p
+                    JOIN isciler i ON p.isci_id = i.id
+                    WHERE i.ad_soyad = '{filtre_isci}' 
+                    AND p.tarih BETWEEN '{rapor_baslangic}' AND '{rapor_bitis}'
+                    ORDER BY p.tarih DESC
+                """, conn)
+                conn.close()
+                
+                if not df_detay.empty:
+                    df_detay['tatil'] = df_detay['tatil'].apply(lambda x: '🏖️ Tatil' if x == 1 else '✅ Çalışma')
+                    st.dataframe(
+                        df_detay.rename(columns={
+                            'tarih': 'Tarih',
+                            'tatil': 'Durum',
+                            'giris_saati': 'Giriş',
+                            'cikis_saati': 'Çıkış',
+                            'toplam_saat': 'Toplam Saat',
+                            'mesai_saati': 'Mesai',
+                            'aciklama': 'Açıklama'
+                        }),
+                        use_container_width=True
+                    )
+        else:
+            st.info("Seçilen kriterlere uygun puantaj kaydı bulunamadı.")
+
+# Gelir-Gider Analizi
+elif menu == "💼 Gelir-Gider Analizi":
+    st.title("💼 Gelir-Gider Analizi")
+    
+    # Tarih aralığı seçimi
+    col1, col2 = st.columns(2)
+    with col1:
+        baslangic = st.date_input("Başlangıç Tarihi", value=date.today() - timedelta(days=30), key="analiz_baslangic")
+    with col2:
+        bitis = st.date_input("Bitiş Tarihi", value=date.today(), key="analiz_bitis")
+    
+    conn = get_db_connection()
+    
+    # Toplam gelir
+    df_gelir = _read_sql(f"""
+        SELECT COALESCE(SUM(toplam_tutar), 0) as toplam_gelir,
+               COALESCE(SUM(nakliye_ucreti), 0) as toplam_nakliye
+        FROM satislar
+        WHERE tarih BETWEEN '{baslangic}' AND '{bitis}'
+    """, conn)
+    
+    # Toplam gider
+    df_gider = _read_sql(f"""
+        SELECT COALESCE(SUM(tutar), 0) as toplam_gider
+        FROM oda_giderleri
+        WHERE tarih BETWEEN '{baslangic}' AND '{bitis}'
+    """, conn)
+    
+    # Gider kategorileri
+    df_gider_kategorili = _read_sql(f"""
+        SELECT gider_kalemi, SUM(tutar) as toplam
+        FROM oda_giderleri
+        WHERE tarih BETWEEN '{baslangic}' AND '{bitis}'
+        GROUP BY gider_kalemi
+        ORDER BY toplam DESC
+    """, conn)
+    
+    conn.close()
+    
+    # Özet kartlar
+    toplam_gelir = df_gelir['toplam_gelir'].values[0]
+    toplam_nakliye = df_gelir['toplam_nakliye'].values[0]
+    toplam_gider = df_gider['toplam_gider'].values[0]
+    net_gelir = toplam_gelir - toplam_nakliye
+    net_kar = net_gelir - toplam_gider
+    kar_marji = (net_kar / net_gelir * 100) if net_gelir > 0 else 0
+    
+    st.markdown("### 📊 Finansal Özet")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Toplam Gelir", f"{toplam_gelir:,.2f} TL", delta=None)
+    with col2:
+        st.metric("Toplam Gider", f"{toplam_gider:,.2f} TL", delta=None)
+    with col3:
+        st.metric("Net Kâr", f"{net_kar:,.2f} TL", 
+                 delta=f"{kar_marji:.1f}% Kâr Marjı",
+                 delta_color="normal" if net_kar >= 0 else "inverse")
+    with col4:
+        st.metric("Nakliye Gideri", f"{toplam_nakliye:,.2f} TL", delta=None)
+    
+    st.markdown("---")
+    
+    # Gelir-Gider Pasta Grafikleri
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 💰 Gelir Dağılımı")
+        gelir_data = pd.DataFrame({
+            'Kategori': ['Net Gelir', 'Nakliye'],
+            'Tutar': [net_gelir, toplam_nakliye]
+        })
+        fig_gelir = px.pie(gelir_data, values='Tutar', names='Kategori',
+                          title='Gelir Bileşenleri')
+        st.plotly_chart(fig_gelir, use_container_width=True)
+    
+    with col2:
+        st.markdown("### 💸 Gider Kategorileri")
+        if not df_gider_kategorili.empty:
+            fig_gider = px.pie(df_gider_kategorili, values='toplam', names='gider_kalemi',
+                              title='Gider Dağılımı')
+            st.plotly_chart(fig_gider, use_container_width=True)
+        else:
+            st.info("Gider verisi bulunmuyor.")
+    
+    # Gider detayları
+    if not df_gider_kategorili.empty:
+        st.markdown("---")
+        st.markdown("### 📋 Gider Detayları")
+        
+        df_gider_kategorili['oran'] = (df_gider_kategorili['toplam'] / toplam_gider * 100).round(2)
+        
+        st.dataframe(
+            df_gider_kategorili.rename(columns={
+                'gider_kalemi': 'Gider Kalemi',
+                'toplam': 'Tutar (TL)',
+                'oran': 'Oran (%)'
+            }),
+            use_container_width=True
+        )
+    
+    # Gelir-Gider karşılaştırma grafiği
+    st.markdown("---")
+    st.markdown("### 📊 Gelir-Gider Karşılaştırması")
+    
+    karsilastirma_data = pd.DataFrame({
+        'Kategori': ['Gelir', 'Gider', 'Net Kâr'],
+        'Tutar': [net_gelir, toplam_gider, net_kar]
+    })
+    
+    fig_karsilastirma = px.bar(karsilastirma_data, x='Kategori', y='Tutar',
+                               title='Gelir-Gider-Kâr Karşılaştırması',
+                               labels={'Tutar': 'Tutar (TL)'},
+                               color='Kategori',
+                               color_discrete_map={'Gelir': 'green', 'Gider': 'red', 'Net Kâr': 'blue'})
+    st.plotly_chart(fig_karsilastirma, use_container_width=True)
+
+# Veri Yedekleme
+elif menu == "📥 Veri Yedekleme":
+    st.title("📥 Veri Yedekleme")
+    
+    st.markdown("### 💾 Verileri CSV Olarak İndir")
+    st.info("Her tabloyu ayrı CSV dosyası olarak indirin. Excel veya başka programlarda açabilirsiniz.")
+    
+    conn = get_db_connection()
+    
+    tablolar = {
+        "Gider_Kalemleri": "SELECT kalem_adi, birim_fiyat, aciklama FROM gider_kalemleri WHERE aktif=1",
+        "Odalar": "SELECT oda_adi, alan_m2, kapasite_kg, durum, aciklama FROM odalar",
+        "Oda_Giderleri": "SELECT o.oda_adi, og.gider_kalemi, og.tutar, og.tarih, og.aciklama FROM oda_giderleri og JOIN odalar o ON og.oda_id = o.id ORDER BY og.tarih DESC",
+        "Gunluk_Hasat": "SELECT o.oda_adi, gh.tarih, gh.hasat_kg, gh.kalite, gh.aciklama FROM gunluk_hasat gh JOIN odalar o ON gh.oda_id = o.id ORDER BY gh.tarih DESC",
+        "Satislar": "SELECT o.oda_adi, s.tarih, s.alan_kisi, s.satis_kg, s.birim_fiyat, s.toplam_tutar, s.fire_kg, s.nakliye_ucreti, s.aciklama FROM satislar s JOIN odalar o ON s.oda_id = o.id ORDER BY s.tarih DESC",
+        "Iklim_Verileri": "SELECT o.oda_adi, iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2, iv.aciklama FROM iklim_verileri iv JOIN odalar o ON iv.oda_id = o.id ORDER BY iv.tarih DESC",
+        "Isciler": "SELECT ad_soyad, telefon, pozisyon, gunluk_ucret, saat_ucreti FROM isciler WHERE aktif=1",
+        "Puantaj": "SELECT i.ad_soyad, p.tarih, CASE WHEN p.tatil=1 THEN 'Tatil' ELSE 'Calisma' END as durum, p.giris_saati, p.cikis_saati, p.toplam_saat, p.mesai_saati, p.aciklama FROM puantaj p JOIN isciler i ON p.isci_id = i.id ORDER BY p.tarih DESC",
+    }
+    
+    col1, col2 = st.columns(2)
+    items = list(tablolar.items())
+    for i, (tablo_adi, sorgu) in enumerate(items):
+        df_backup = _read_sql(sorgu, conn)
+        csv_data = df_backup.to_csv(index=False).encode('utf-8-sig')
+        with (col1 if i % 2 == 0 else col2):
+            st.download_button(
+                label=f"📥 {tablo_adi.replace('_', ' ')} ({len(df_backup)} kayıt)",
+                data=csv_data,
+                file_name=f"{tablo_adi}_{date.today()}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key=f"dl_{i}"
+            )
+    conn.close()
+    
+    st.markdown("---")
+    st.markdown("### 📊 Veritabanı Özeti")
+    conn = get_db_connection()
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Oda", _read_sql("SELECT COUNT(*) as c FROM odalar", conn)['c'][0])
+    with col2:
+        st.metric("Hasat Kaydı", _read_sql("SELECT COUNT(*) as c FROM gunluk_hasat", conn)['c'][0])
+    with col3:
+        st.metric("Satış Kaydı", _read_sql("SELECT COUNT(*) as c FROM satislar", conn)['c'][0])
+    with col4:
+        st.metric("Puantaj Kaydı", _read_sql("SELECT COUNT(*) as c FROM puantaj", conn)['c'][0])
+    conn.close()
+
+# Footer
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center'>
+        <p>🍄 Mantar Üretimi İş Takip Sistemi v1.0 | © 2026</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)

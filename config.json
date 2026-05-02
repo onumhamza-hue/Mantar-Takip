@@ -1,0 +1,17 @@
+{
+  "telegram": {
+    "bot_token": "TELEGRAM_BOT_TOKEN_BURAYA",
+    "chat_id": "TELEGRAM_CHAT_ID_BURAYA"
+  },
+  "weather": {
+    "api_key": "OPENWEATHERMAP_API_KEY_BURAYA",
+    "sehir": "Ankara",
+    "ilce": "Çubuk"
+  },
+  "esikler": {
+    "min_sicaklik": 10,
+    "max_sicaklik": 28,
+    "ideal_min": 15,
+    "ideal_max": 22
+  }
+}

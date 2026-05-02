@@ -1,0 +1,8 @@
+# Hassas veriler ve geçici dosyalar
+.streamlit/secrets.toml
+*.db
+*.db-journal
+venv/
+__pycache__/
+*.pyc
+.env
