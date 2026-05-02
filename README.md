@@ -174,3 +174,4 @@ Bu proje mantar üreticilerine yardımcı olmak için geliştirilmiştir. Başar
 
 **Not**: Program sürekli çalışmalı ve internet bağlantısı olmalıdır. Raspberry Pi veya 7/24 çalışan bir bilgisayarda çalıştırmanız önerilir.
 "# Mantar-Takip" 
+"# Mantar-Takip" 
