@@ -401,16 +401,19 @@ if menu == "🏠 Ana Sayfa":
     conn = get_db_connection()
     
     # Özet istatistikler
-    with col1:
-        st.metric("Toplam Oda Sayısı", _read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn).iloc[0, 0])
-    
-    with col2:
-        bugun_hasat = _read_sql(f"SELECT COALESCE(SUM(hasat_kg), 0) as toplam FROM gunluk_hasat WHERE tarih='{date.today()}'", conn)
-        st.metric("Bugünkü Hasat (kg)", f"{bugun_hasat['toplam'][0]:.2f}")
-    
-    with col3:
-        bu_ay_satis = _read_sql(f"SELECT COALESCE(SUM(toplam_tutar), 0) as toplam FROM satislar WHERE strftime('%Y-%m', tarih)='{date.today().strftime('%Y-%m')}'", conn)
-        st.metric("Bu Ay Satış (TL)", f"{bu_ay_satis['toplam'][0]:,.2f}")
+    try:
+        with col1:
+            st.metric("Toplam Oda Sayısı", int(_read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn).iloc[0, 0] or 0))
+        
+        with col2:
+            bugun_val = _read_sql(f"SELECT COALESCE(SUM(hasat_kg), 0) as toplam FROM gunluk_hasat WHERE tarih='{date.today()}'", conn).iloc[0, 0]
+            st.metric("Bugünkü Hasat (kg)", f"{float(bugun_val or 0):.2f}")
+        
+        with col3:
+            bu_ay_val = _read_sql(f"SELECT COALESCE(SUM(toplam_tutar), 0) as toplam FROM satislar WHERE strftime('%Y-%m', tarih)='{date.today().strftime('%Y-%m')}'", conn).iloc[0, 0]
+            st.metric("Bu Ay Satış (TL)", f"{float(bu_ay_val or 0):,.2f}")
+    except Exception as e:
+        st.error(f"İstatistik yüklenemedi: {e}")
     
     conn.close()
     
