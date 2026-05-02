@@ -365,7 +365,7 @@ if menu == "🏠 Ana Sayfa":
     
     # Özet istatistikler
     with col1:
-        st.metric("Toplam Oda Sayısı", _read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn)['cnt'][0])
+        st.metric("Toplam Oda Sayısı", _read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn).iloc[0, 0])
     
     with col2:
         bugun_hasat = _read_sql(f"SELECT COALESCE(SUM(hasat_kg), 0) as toplam FROM gunluk_hasat WHERE tarih='{date.today()}'", conn)
@@ -1847,13 +1847,13 @@ elif menu == "📥 Veri Yedekleme":
     conn = get_db_connection()
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Oda", _read_sql("SELECT COUNT(*) as c FROM odalar", conn)['c'][0])
+        st.metric("Oda", _read_sql("SELECT COUNT(*) as c FROM odalar", conn).iloc[0, 0])
     with col2:
-        st.metric("Hasat Kaydı", _read_sql("SELECT COUNT(*) as c FROM gunluk_hasat", conn)['c'][0])
+        st.metric("Hasat Kaydı", _read_sql("SELECT COUNT(*) as c FROM gunluk_hasat", conn).iloc[0, 0])
     with col3:
-        st.metric("Satış Kaydı", _read_sql("SELECT COUNT(*) as c FROM satislar", conn)['c'][0])
+        st.metric("Satış Kaydı", _read_sql("SELECT COUNT(*) as c FROM satislar", conn).iloc[0, 0])
     with col4:
-        st.metric("Puantaj Kaydı", _read_sql("SELECT COUNT(*) as c FROM puantaj", conn)['c'][0])
+        st.metric("Puantaj Kaydı", _read_sql("SELECT COUNT(*) as c FROM puantaj", conn).iloc[0, 0])
     conn.close()
 
 # Footer
