@@ -147,7 +147,13 @@ def _read_sql(sql, conn, params=None):
 
 def init_database():
     """Veritabanını başlat"""
-    conn = get_db_connection()
+    if IS_CLOUD:
+        # PostgreSQL: autocommit ile her DDL bağımsız çalışır, hata diğerlerini etkilemez
+        raw = _psycopg2.connect(_DB_URL)
+        raw.autocommit = True
+        conn = _PGConnection(raw)
+    else:
+        conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     # Gider kalemleri tablosu
@@ -329,15 +335,16 @@ def init_database():
         c.executemany("INSERT INTO gider_kalemleri (kalem_adi, birim_fiyat, aciklama) VALUES (?, ?, ?)", 
                       varsayilan_giderler)
     
-    conn.commit()
+    if not IS_CLOUD:
+        conn.commit()
     conn.close()
 
-def get_db_connection():
-    """Veritabanı bağlantısı al"""
-    return sqlite3.connect(DB_PATH)
-
 # Veritabanını başlat
-init_database()
+try:
+    init_database()
+except Exception as _init_err:
+    st.error(f"❌ Veritabanı başlatma hatası: {_init_err}")
+    st.stop()
 
 # Yan menü
 st.sidebar.title("🍄 Mantar İş Takip")
