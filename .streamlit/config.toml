@@ -2,5 +2,8 @@
 headless = true
 port = 8501
 
+[runner]
+magicEnabled = false
+
 [theme]
 base = "light"
