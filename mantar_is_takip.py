@@ -91,6 +91,14 @@ if IS_CLOUD:
                 r'ALTER TABLE \1 ADD COLUMN IF NOT EXISTS ',
                 s, flags=_re.IGNORECASE
             )
+            # SQLite → PostgreSQL fonksiyon dönüşümleri
+            s = _re.sub(r"strftime\s*\(\s*'%Y-%m'\s*,\s*(\w+)\s*\)",
+                        r"TO_CHAR(\1::date, 'YYYY-MM')", s, flags=_re.IGNORECASE)
+            s = _re.sub(r"strftime\s*\(\s*'%Y'\s*,\s*(\w+)\s*\)",
+                        r"TO_CHAR(\1::date, 'YYYY')", s, flags=_re.IGNORECASE)
+            s = _re.sub(r"strftime\s*\(\s*'%m'\s*,\s*(\w+)\s*\)",
+                        r"TO_CHAR(\1::date, 'MM')", s, flags=_re.IGNORECASE)
+            s = s.replace("datetime('now')", "NOW()")
             stripped = s.strip().upper()
             # Sadece VALUES ile INSERT olan sorgulara RETURNING ekle (INSERT INTO ... SELECT hariç)
             if (stripped.startswith('INSERT') and
@@ -138,6 +146,20 @@ def _read_sql(sql, conn, params=None):
     """pd.read_sql yerine — SQLite ve PostgreSQL uyumlu"""
     if IS_CLOUD:
         pg_sql = sql.replace('?', '%s')
+        # SQLite → PostgreSQL fonksiyon dönüşümleri
+        pg_sql = _re.sub(
+            r"strftime\s*\(\s*'%Y-%m'\s*,\s*(\w+)\s*\)",
+            r"TO_CHAR(\1::date, 'YYYY-MM')", pg_sql, flags=_re.IGNORECASE)
+        pg_sql = _re.sub(
+            r"strftime\s*\(\s*'%Y'\s*,\s*(\w+)\s*\)",
+            r"TO_CHAR(\1::date, 'YYYY')", pg_sql, flags=_re.IGNORECASE)
+        pg_sql = _re.sub(
+            r"strftime\s*\(\s*'%m'\s*,\s*(\w+)\s*\)",
+            r"TO_CHAR(\1::date, 'MM')", pg_sql, flags=_re.IGNORECASE)
+        pg_sql = _re.sub(
+            r"strftime\s*\(\s*'%d'\s*,\s*(\w+)\s*\)",
+            r"TO_CHAR(\1::date, 'DD')", pg_sql, flags=_re.IGNORECASE)
+        pg_sql = pg_sql.replace("datetime('now')", "NOW()")
         raw    = conn._conn if hasattr(conn, '_conn') else conn
         cur    = raw.cursor()
         try:
