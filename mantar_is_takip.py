@@ -77,6 +77,12 @@ if IS_CLOUD:
             s = _re.sub(r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b',
                         'SERIAL PRIMARY KEY', sql, flags=_re.IGNORECASE)
             s = s.replace('?', '%s')
+            # PostgreSQL: ALTER TABLE ADD COLUMN IF NOT EXISTS (transaction abort'u önle)
+            s = _re.sub(
+                r'\bALTER\s+TABLE\s+(\S+)\s+ADD\s+COLUMN\s+(?!IF\s+NOT\s+EXISTS\s+)',
+                r'ALTER TABLE \1 ADD COLUMN IF NOT EXISTS ',
+                s, flags=_re.IGNORECASE
+            )
             stripped = s.strip().upper()
             # Sadece VALUES ile INSERT olan sorgulara RETURNING ekle (INSERT INTO ... SELECT hariç)
             if (stripped.startswith('INSERT') and
