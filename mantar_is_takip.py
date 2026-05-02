@@ -63,6 +63,14 @@ def _detect_cloud():
 _detect_cloud()
 
 if IS_CLOUD:
+    # Streamlit Cloud bazen IPv6 kullanır, Supabase IPv4 ister — zorla IPv4
+    import socket as _socket
+    _orig_getaddrinfo = _socket.getaddrinfo
+    def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        return _orig_getaddrinfo(host, port, _socket.AF_INET, type, proto, flags)
+    _socket.getaddrinfo = _ipv4_getaddrinfo
+
+if IS_CLOUD:
     import psycopg2 as _psycopg2
 
     class _PGCursor:
