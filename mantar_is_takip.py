@@ -77,7 +77,12 @@ if IS_CLOUD:
             s = _re.sub(r'\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b',
                         'SERIAL PRIMARY KEY', sql, flags=_re.IGNORECASE)
             s = s.replace('?', '%s')
-            if s.strip().upper().startswith('INSERT') and 'RETURNING' not in s.upper():
+            stripped = s.strip().upper()
+            # Sadece VALUES ile INSERT olan sorgulara RETURNING ekle (INSERT INTO ... SELECT hariç)
+            if (stripped.startswith('INSERT') and
+                    'RETURNING' not in stripped and
+                    'VALUES' in stripped and
+                    ' SELECT ' not in stripped):
                 s = s.rstrip().rstrip(';') + ' RETURNING id'
                 self._c.execute(s, params) if params is not None else self._c.execute(s)
                 row = self._c.fetchone()
@@ -123,11 +128,14 @@ def _read_sql(sql, conn, params=None):
         cur    = raw.cursor()
         try:
             cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
-            cols = [d[0] for d in cur.description]
-            return pd.DataFrame(cur.fetchall(), columns=cols)
+            if cur.description is None:
+                return pd.DataFrame()
+            cols = [d[0].lower() for d in cur.description]
+            rows = cur.fetchall()
+            return pd.DataFrame(rows, columns=cols)
         finally:
             cur.close()
-    return _read_sql(sql, conn, params=params)
+    return pd.read_sql(sql, conn, params=params)
 
 # ───────────────────────────────────────────────────────────────────────────────
 
