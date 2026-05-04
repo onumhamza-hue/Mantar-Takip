@@ -2174,6 +2174,9 @@ elif menu == "🌱 Üretim Takvimi":
                 else:
                     baslik = f"✅ **{oda_adi_r}** — Dönem {donem_r} | {sonraki_adi}"
 
+                _ut_row_id = int(row['id'])
+                _edit_key  = f"ut_edit_{_ut_row_id}"
+
                 with st.expander(baslik, expanded=True):
                     evre_verileri = [
                         ("🌱 Ekim",        ekim_d,   None,    10, "⚙️ Baskı"),
@@ -2246,6 +2249,59 @@ elif menu == "🌱 Üretim Takvimi":
                                 st.info(f"⚙️ Baskı yapıldı — Toprak Serim bekleniyor")
                             elif ekim_d:
                                 st.info(f"🌱 Ekildi — Baskı bekleniyor")
+
+                    # ── Düzenleme Alanı ─────────────────────────────────────
+                    st.markdown("---")
+                    if st.toggle("✏️ Tarihleri Düzenle", key=f"tog_{_edit_key}"):
+                        st.caption("Tarihi silmek için ilgili checkbox'ı kaldırın.")
+                        _alan_adlari = [
+                            ("ekim_tarihi",         "🌱 Ekim",        ekim_d),
+                            ("baski_tarihi",        "⚙️ Baskı",        baski_d),
+                            ("toprak_serim_tarihi", "🌍 Toprak Serim", toprak_d),
+                            ("tirmik_tarihi",       "🔧 Tırmık",       tirmik_d),
+                            ("hava_verme_tarihi",   "💨 Hava Verme",   hava_d),
+                            ("flash1_tarihi",       "🍄 1. Flaş",      flash1_d),
+                        ]
+                        _edit_vals = {}
+                        _col_pairs = st.columns(3)
+                        for _ei, (_alan, _lbl, _mev) in enumerate(_alan_adlari):
+                            with _col_pairs[_ei % 3]:
+                                _chk = st.checkbox(_lbl, value=_mev is not None, key=f"{_edit_key}_{_alan}_chk")
+                                if _chk:
+                                    _edit_vals[_alan] = st.date_input(
+                                        f"{_lbl} Tarihi",
+                                        value=_mev or date.today(),
+                                        key=f"{_edit_key}_{_alan}_dt"
+                                    )
+                                else:
+                                    _edit_vals[_alan] = None
+                        _edit_aciklama = st.text_input(
+                            "Açıklama",
+                            value=str(row['aciklama']) if row['aciklama'] and str(row['aciklama']) not in ('None','nan','') else "",
+                            key=f"{_edit_key}_acik"
+                        )
+                        if st.button("💾 Kaydet", type="primary", key=f"btn_{_edit_key}_save"):
+                            conn = get_db_connection()
+                            c = conn.cursor()
+                            c.execute("""UPDATE oda_uretim_takip SET
+                                ekim_tarihi=?, baski_tarihi=?, toprak_serim_tarihi=?,
+                                tirmik_tarihi=?, hava_verme_tarihi=?, flash1_tarihi=?, aciklama=?
+                                WHERE id=?""",
+                                (
+                                    str(_edit_vals["ekim_tarihi"])         if _edit_vals["ekim_tarihi"]         else None,
+                                    str(_edit_vals["baski_tarihi"])        if _edit_vals["baski_tarihi"]        else None,
+                                    str(_edit_vals["toprak_serim_tarihi"]) if _edit_vals["toprak_serim_tarihi"] else None,
+                                    str(_edit_vals["tirmik_tarihi"])       if _edit_vals["tirmik_tarihi"]       else None,
+                                    str(_edit_vals["hava_verme_tarihi"])   if _edit_vals["hava_verme_tarihi"]   else None,
+                                    str(_edit_vals["flash1_tarihi"])       if _edit_vals["flash1_tarihi"]       else None,
+                                    _edit_aciklama,
+                                    _ut_row_id
+                                )
+                            )
+                            conn.commit()
+                            conn.close()
+                            st.success("✅ Kaydedildi!")
+                            st.rerun()
 
     # ── TAB 3: Gantt Takvim ───────────────────────────────────────────────────
     with tab3:
