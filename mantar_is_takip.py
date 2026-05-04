@@ -686,7 +686,7 @@ elif menu == "🏢 Oda Yönetimi":
             conn.close()
             
             if not df_kayitli_giderler.empty:
-                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin. Satırı silmek için sol taraftaki 🗑️ ikonuna tıklayın.")
                 _og_orig = df_kayitli_giderler.copy()
                 _og_edited = st.data_editor(
                     _og_orig,
@@ -700,18 +700,29 @@ elif menu == "🏢 Oda Yönetimi":
                     },
                     hide_index=True,
                     use_container_width=True,
+                    num_rows="dynamic",
                     key="og_editor"
                 )
                 if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_og_editor_save"):
                     conn = get_db_connection()
                     c = conn.cursor()
+                    # Silinen satırları bul (orijinalde olup düzenlenmiş tabloda olmayan id'ler)
+                    _og_mevcut_ids = set(_og_edited['id'].dropna().astype(int).tolist())
+                    _og_tum_ids    = set(_og_orig['id'].dropna().astype(int).tolist())
+                    _silinecekler  = _og_tum_ids - _og_mevcut_ids
+                    for _del_id in _silinecekler:
+                        c.execute("DELETE FROM oda_giderleri WHERE id=?", (_del_id,))
+                    # Düzenlenen satırları güncelle
                     for _, _r in _og_edited.iterrows():
                         if pd.notna(_r.get('id')):
                             c.execute("UPDATE oda_giderleri SET tarih=?, gider_kalemi=?, tutar=?, aciklama=? WHERE id=?",
                                       (str(_r['tarih']), str(_r['gider_kalemi']), float(_r['tutar'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
                     conn.commit()
                     conn.close()
-                    st.success("✅ Değişiklikler kaydedildi!")
+                    if _silinecekler:
+                        st.success(f"✅ {len(_silinecekler)} kayıt silindi, değişiklikler kaydedildi!")
+                    else:
+                        st.success("✅ Değişiklikler kaydedildi!")
                     _rerun()
         else:
             st.warning("⚠️ Önce oda ve gider kalemleri eklemelisiniz!")
