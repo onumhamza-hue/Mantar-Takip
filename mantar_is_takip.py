@@ -281,6 +281,21 @@ def init_database():
     except Exception:
         pass  # Sütun zaten mevcut
 
+    # Oda Üretim Takip tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS oda_uretim_takip
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_id INTEGER NOT NULL,
+                  donem_no INTEGER DEFAULT 1,
+                  ekim_tarihi DATE,
+                  baski_tarihi DATE,
+                  toprak_serim_tarihi DATE,
+                  tirmik_tarihi DATE,
+                  hava_verme_tarihi DATE,
+                  flash1_tarihi DATE,
+                  aciklama TEXT,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+
     # Cariler tablosu
     c.execute('''CREATE TABLE IF NOT EXISTS cariler
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -382,7 +397,8 @@ st.sidebar.markdown("---")
 
 menu = st.sidebar.radio(
     "Menü",
-    ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi", 
+    ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
+     "🌱 Üretim Takvimi",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
      "📥 Veri Yedekleme"]
@@ -1845,6 +1861,354 @@ elif menu == "💼 Gelir-Gider Analizi":
                                color='Kategori',
                                color_discrete_map={'Gelir': 'green', 'Gider': 'red', 'Net Kâr': 'blue'})
     st.plotly_chart(fig_karsilastirma, use_container_width=True)
+
+# Üretim Takvimi
+elif menu == "🌱 Üretim Takvimi":
+    st.title("🌱 Oda Üretim Takvimi")
+
+    # ── Yardımcı ─────────────────────────────────────────────────────────────
+    def _parse_ut_date(val):
+        if val and str(val) not in ('None', 'nan', ''):
+            try:
+                return date.fromisoformat(str(val)[:10])
+            except Exception:
+                pass
+        return None
+
+    EVRELER = [
+        # (db_alan,               emoji_lbl,            sonraki_gun, sonraki_lbl)
+        ("ekim_tarihi",        "🌱 Ekim",              10, "⚙️ Baskı"),
+        ("baski_tarihi",       "⚙️ Baskı",              1, "🌍 Toprak Serim"),
+        ("toprak_serim_tarihi","🌍 Toprak Serim",        9, "🔧 Tırmık"),
+        ("tirmik_tarihi",      "🔧 Tırmık",             3, "💨 Hava Verme"),
+        ("hava_verme_tarihi",  "💨 Hava Verme",         11, "🍄 1. Flaş"),
+        ("flash1_tarihi",      "🍄 1. Flaş",         None, None),
+    ]
+
+    tab1, tab2, tab3 = st.tabs(["📅 Tarih Girişi", "📋 Oda Takip Paneli", "📊 Gantt Takvim"])
+
+    # ── TAB 1: Tarih Girişi ──────────────────────────────────────────────────
+    with tab1:
+        conn = get_db_connection()
+        df_odalar_ut = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
+        conn.close()
+
+        if df_odalar_ut.empty:
+            st.warning("⚠️ Önce oda eklemelisiniz! (Oda Yönetimi menüsünden)")
+        else:
+            st.subheader("📅 Üretim Tarihleri Girişi")
+            col1, col2 = st.columns(2)
+            with col1:
+                ut_oda = st.selectbox("Oda Seçin", df_odalar_ut['oda_adi'].tolist(), key="ut_oda_sel")
+                ut_oda_id = int(df_odalar_ut[df_odalar_ut['oda_adi'] == ut_oda]['id'].values[0])
+
+            conn = get_db_connection()
+            df_donemler_ut = _read_sql(
+                f"SELECT * FROM oda_uretim_takip WHERE oda_id={ut_oda_id} ORDER BY donem_no DESC", conn
+            )
+            conn.close()
+
+            with col2:
+                donem_opts = ["➕ Yeni Dönem"]
+                if not df_donemler_ut.empty:
+                    donem_opts += [f"Dönem {int(r['donem_no'])}" for _, r in df_donemler_ut.iterrows()]
+                ut_donem_sel = st.selectbox("Dönem", donem_opts, key="ut_donem_sel")
+
+            if ut_donem_sel == "➕ Yeni Dönem":
+                mevcut_kay = None
+                yeni_donem_no = int(df_donemler_ut['donem_no'].max()) + 1 if not df_donemler_ut.empty else 1
+            else:
+                yeni_donem_no = int(ut_donem_sel.split(" ")[1])
+                _filtre = df_donemler_ut[df_donemler_ut['donem_no'] == yeni_donem_no]
+                mevcut_kay = _filtre.iloc[0] if not _filtre.empty else None
+
+            st.markdown("---")
+            st.markdown("**Yapılan işlemleri işaretleyin ve tarihini girin:**")
+
+            EVRE_HINTS = [
+                ("ekim_tarihi",         "🌱 Ekim Yapıldı",         "Ekim Tarihi",         "10 gün sonra → Baskı tahmini"),
+                ("baski_tarihi",        "⚙️ Baskı Yapıldı",         "Baskı Tarihi",         "1 gün sonra → Toprak Serim tahmini"),
+                ("toprak_serim_tarihi", "🌍 Toprak Serim Yapıldı",  "Toprak Serim Tarihi", "9 gün sonra → Tırmık tahmini"),
+                ("tirmik_tarihi",       "🔧 Tırmık Yapıldı",        "Tırmık Tarihi",       "3 gün sonra → Hava Verme tahmini"),
+                ("hava_verme_tarihi",   "💨 Hava Verme Yapıldı",    "Hava Verme Tarihi",   "11 gün sonra → 1. Flaş tahmini"),
+                ("flash1_tarihi",       "🍄 1. Flaş Başladı",       "1. Flaş Tarihi",      ""),
+            ]
+
+            tarih_vals = {}
+            for alan, chk_lbl, dt_lbl, hint in EVRE_HINTS:
+                mev_t = _parse_ut_date(mevcut_kay[alan]) if mevcut_kay is not None else None
+                yapildi = st.checkbox(chk_lbl, value=mev_t is not None, key=f"utck_{alan}")
+                if yapildi:
+                    tarih_vals[alan] = st.date_input(dt_lbl, value=mev_t or date.today(), key=f"utdt_{alan}")
+                    if hint:
+                        st.caption(f"ℹ️ {hint}")
+                else:
+                    tarih_vals[alan] = None
+                st.markdown("")
+
+            aciklama_ut = st.text_area(
+                "Açıklama",
+                value=str(mevcut_kay['aciklama']) if mevcut_kay is not None and mevcut_kay['aciklama'] else "",
+                key="ut_aciklama"
+            )
+
+            if st.button("💾 Kaydet", type="primary", key="btn_ut_save"):
+                p = tuple(
+                    str(tarih_vals[a]) if tarih_vals[a] else None
+                    for a in ["ekim_tarihi", "baski_tarihi", "toprak_serim_tarihi",
+                               "tirmik_tarihi", "hava_verme_tarihi", "flash1_tarihi"]
+                ) + (aciklama_ut,)
+                conn = get_db_connection()
+                c = conn.cursor()
+                if ut_donem_sel == "➕ Yeni Dönem":
+                    c.execute(
+                        """INSERT INTO oda_uretim_takip
+                           (oda_id, donem_no, ekim_tarihi, baski_tarihi, toprak_serim_tarihi,
+                            tirmik_tarihi, hava_verme_tarihi, flash1_tarihi, aciklama)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (ut_oda_id, yeni_donem_no) + p
+                    )
+                else:
+                    c.execute(
+                        """UPDATE oda_uretim_takip SET
+                           ekim_tarihi=?, baski_tarihi=?, toprak_serim_tarihi=?,
+                           tirmik_tarihi=?, hava_verme_tarihi=?, flash1_tarihi=?, aciklama=?
+                           WHERE oda_id=? AND donem_no=?""",
+                        p + (ut_oda_id, yeni_donem_no)
+                    )
+                conn.commit()
+                conn.close()
+                st.success("✅ Kaydedildi!")
+                st.rerun()
+
+    # ── TAB 2: Oda Takip Paneli ───────────────────────────────────────────────
+    with tab2:
+        conn = get_db_connection()
+        df_tum_takip = _read_sql("""
+            SELECT o.oda_adi, ut.*
+            FROM oda_uretim_takip ut
+            JOIN odalar o ON ut.oda_id = o.id
+            ORDER BY o.oda_adi, ut.donem_no DESC
+        """, conn)
+        conn.close()
+
+        if df_tum_takip.empty:
+            st.info("ℹ️ Henüz kayıt yok. 'Tarih Girişi' sekmesinden ekleyin.")
+        else:
+            bugun = date.today()
+
+            for _, row in df_tum_takip.iterrows():
+                oda_adi_r = row['oda_adi']
+                donem_r   = int(row['donem_no'])
+
+                ekim_d   = _parse_ut_date(row['ekim_tarihi'])
+                baski_d  = _parse_ut_date(row['baski_tarihi'])
+                toprak_d = _parse_ut_date(row['toprak_serim_tarihi'])
+                tirmik_d = _parse_ut_date(row['tirmik_tarihi'])
+                hava_d   = _parse_ut_date(row['hava_verme_tarihi'])
+                flash1_d = _parse_ut_date(row['flash1_tarihi'])
+
+                # Sonraki tahmini işlem
+                if flash1_d:
+                    sonraki_adi = "✅ Tamamlandı"
+                    sonraki_tahmini = None
+                elif hava_d:
+                    sonraki_adi = "🍄 1. Flaş"
+                    sonraki_tahmini = hava_d + timedelta(days=11)
+                elif tirmik_d:
+                    sonraki_adi = "💨 Hava Verme"
+                    sonraki_tahmini = tirmik_d + timedelta(days=3)
+                elif toprak_d:
+                    sonraki_adi = "🔧 Tırmık"
+                    sonraki_tahmini = toprak_d + timedelta(days=9)
+                elif baski_d:
+                    sonraki_adi = "🌍 Toprak Serim"
+                    sonraki_tahmini = baski_d + timedelta(days=1)
+                elif ekim_d:
+                    sonraki_adi = "⚙️ Baskı"
+                    sonraki_tahmini = ekim_d + timedelta(days=10)
+                else:
+                    sonraki_adi = "📋 Veri yok"
+                    sonraki_tahmini = None
+
+                if sonraki_tahmini:
+                    fark = (sonraki_tahmini - bugun).days
+                    if fark < 0:
+                        durum_ikon = "🔴"
+                        durum_txt  = f"{abs(fark)} gün GECİKMİŞ"
+                    elif fark <= 2:
+                        durum_ikon = "🟡"
+                        durum_txt  = f"BUGÜN / {fark} gün kaldı"
+                    else:
+                        durum_ikon = "🟢"
+                        durum_txt  = f"{fark} gün kaldı"
+                    baslik = f"{durum_ikon} **{oda_adi_r}** — Dönem {donem_r} | Sonraki: {sonraki_adi} ({durum_txt})"
+                else:
+                    baslik = f"✅ **{oda_adi_r}** — Dönem {donem_r} | {sonraki_adi}"
+
+                with st.expander(baslik, expanded=True):
+                    evre_verileri = [
+                        ("🌱 Ekim",        ekim_d,   None,    10, "⚙️ Baskı"),
+                        ("⚙️ Baskı",        baski_d,  ekim_d,   1, "🌍 Toprak Serim"),
+                        ("🌍 Toprak Serim", toprak_d, baski_d,  9, "🔧 Tırmık"),
+                        ("🔧 Tırmık",       tirmik_d, toprak_d, 3, "💨 Hava Verme"),
+                        ("💨 Hava Verme",   hava_d,   tirmik_d,11, "🍄 1. Flaş"),
+                        ("🍄 1. Flaş",      flash1_d, hava_d,  None, None),
+                    ]
+
+                    cols6 = st.columns(6)
+                    dates_list = [ekim_d, baski_d, toprak_d, tirmik_d, hava_d, flash1_d]
+
+                    for i, (lbl, evre_dt, onc_dt, sgun, slbl) in enumerate(evre_verileri):
+                        with cols6[i]:
+                            st.markdown(f"**{lbl}**")
+                            if evre_dt:
+                                gun = (bugun - evre_dt).days
+                                st.markdown(f"📅 `{evre_dt.strftime('%d.%m.%Y')}`")
+                                st.markdown(f"⏱️ **+{gun} gün**")
+                                # Tahmini sonraki (yalnızca sonraki yapılmamışsa)
+                                if sgun is not None and i + 1 < len(dates_list) and not dates_list[i + 1]:
+                                    tahmini = evre_dt + timedelta(days=sgun)
+                                    kalan   = (tahmini - bugun).days
+                                    if kalan < 0:
+                                        st.error(f"📅 {tahmini.strftime('%d.%m.%Y')}\n{slbl} gecikti!")
+                                    elif kalan <= 2:
+                                        st.warning(f"📅 {tahmini.strftime('%d.%m.%Y')}\n{slbl}: {kalan} gün")
+                                    else:
+                                        st.info(f"📅 {tahmini.strftime('%d.%m.%Y')}\n{slbl}: {kalan} gün")
+                            else:
+                                st.markdown("— *henüz yok*")
+                                if onc_dt and sgun is None:
+                                    pass  # son evre, tahmin yok
+                                elif onc_dt:
+                                    tahmini = onc_dt + timedelta(days=evre_verileri[i - 1][3])
+                                    st.caption(f"Tahmini: {tahmini.strftime('%d.%m.%Y')}")
+
+                    # Özet satırı
+                    if ekim_d:
+                        st.markdown("---")
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.metric("Ekimden Bu Yana", f"{(bugun - ekim_d).days} gün")
+                        with c2:
+                            tahmini_flash = ekim_d + timedelta(days=10 + 1 + 9 + 3 + 11)
+                            if flash1_d:
+                                st.metric("1. Flaş Başladı", flash1_d.strftime('%d.%m.%Y'))
+                            else:
+                                kalan_flash = (tahmini_flash - bugun).days
+                                st.metric(
+                                    "Tahmini 1. Flaş",
+                                    tahmini_flash.strftime('%d.%m.%Y'),
+                                    delta=f"{kalan_flash} gün kaldı" if kalan_flash >= 0 else f"{abs(kalan_flash)} gün geçti"
+                                )
+                        with c3:
+                            # Şu anki durum
+                            if flash1_d:
+                                st.success("✅ 1. Flaş Başladı")
+                            elif hava_d:
+                                st.info(f"💨 Hava Verildi — 1. Flaş bekleniyor")
+                            elif tirmik_d:
+                                st.info(f"🔧 Tırmık yapıldı — Hava bekleniyor")
+                            elif toprak_d:
+                                st.info(f"🌍 Toprak Serildi — Tırmık bekleniyor")
+                            elif baski_d:
+                                st.info(f"⚙️ Baskı yapıldı — Toprak Serim bekleniyor")
+                            elif ekim_d:
+                                st.info(f"🌱 Ekildi — Baskı bekleniyor")
+
+    # ── TAB 3: Gantt Takvim ───────────────────────────────────────────────────
+    with tab3:
+        conn = get_db_connection()
+        df_gantt_src = _read_sql("""
+            SELECT o.oda_adi, ut.*
+            FROM oda_uretim_takip ut
+            JOIN odalar o ON ut.oda_id = o.id
+            ORDER BY o.oda_adi, ut.donem_no
+        """, conn)
+        conn.close()
+
+        if df_gantt_src.empty:
+            st.info("ℹ️ Görselleştirmek için kayıt yok.")
+        else:
+            bugun = date.today()
+            gantt_rows = []
+
+            for _, row in df_gantt_src.iterrows():
+                oda_lbl  = f"{row['oda_adi']} (D{int(row['donem_no'])})"
+                ekim_d   = _parse_ut_date(row['ekim_tarihi'])
+                baski_d  = _parse_ut_date(row['baski_tarihi'])
+                toprak_d = _parse_ut_date(row['toprak_serim_tarihi'])
+                tirmik_d = _parse_ut_date(row['tirmik_tarihi'])
+                hava_d   = _parse_ut_date(row['hava_verme_tarihi'])
+                flash1_d = _parse_ut_date(row['flash1_tarihi'])
+
+                if not ekim_d:
+                    continue
+
+                # Gerçek veya tahmin tarihlerini hesapla
+                b_t  = baski_d  or ekim_d   + timedelta(days=10)
+                tp_t = toprak_d or b_t       + timedelta(days=1)
+                tr_t = tirmik_d or tp_t      + timedelta(days=9)
+                hv_t = hava_d   or tr_t      + timedelta(days=3)
+                fl_t = flash1_d or hv_t      + timedelta(days=11)
+
+                segmentler = [
+                    ("Ekim → Baskı",    ekim_d,  b_t,   baski_d is not None),
+                    ("Baskı → Toprak",  b_t,     tp_t,  toprak_d is not None),
+                    ("Toprak → Tırmık", tp_t,    tr_t,  tirmik_d is not None),
+                    ("Tırmık → Hava",   tr_t,    hv_t,  hava_d is not None),
+                    ("Hava → 1. Flaş",  hv_t,    fl_t,  flash1_d is not None),
+                ]
+
+                for seg_adi, seg_bas, seg_bit, gercek in segmentler:
+                    gantt_rows.append({
+                        "Oda": oda_lbl,
+                        "Evre": seg_adi,
+                        "Başlangıç": pd.Timestamp(seg_bas),
+                        "Bitiş": pd.Timestamp(seg_bit),
+                        "Durum": "Gerçekleşti" if gercek else "Tahmini",
+                    })
+
+            if gantt_rows:
+                df_gantt = pd.DataFrame(gantt_rows)
+                RENK_MAP = {
+                    "Ekim → Baskı":    "#4CAF50",
+                    "Baskı → Toprak":  "#2196F3",
+                    "Toprak → Tırmık": "#FF9800",
+                    "Tırmık → Hava":   "#9C27B0",
+                    "Hava → 1. Flaş":  "#F44336",
+                }
+                fig_gantt = px.timeline(
+                    df_gantt,
+                    x_start="Başlangıç",
+                    x_end="Bitiş",
+                    y="Oda",
+                    color="Evre",
+                    color_discrete_map=RENK_MAP,
+                    pattern_shape="Durum",
+                    pattern_shape_map={"Gerçekleşti": "", "Tahmini": "/"},
+                    title="🍄 Oda Üretim Takvimi",
+                    labels={"Oda": "Oda / Dönem"},
+                    hover_data=["Durum", "Başlangıç", "Bitiş"],
+                )
+                fig_gantt.add_vline(
+                    x=bugun.isoformat(),
+                    line_dash="dash",
+                    line_color="crimson",
+                    annotation_text="Bugün",
+                    annotation_position="top right",
+                )
+                fig_gantt.update_yaxes(autorange="reversed")
+                fig_gantt.update_layout(
+                    height=max(400, len(df_gantt_src) * 70),
+                    xaxis_title="Tarih",
+                    yaxis_title="",
+                    legend_title="Üretim Evresi",
+                )
+                st.plotly_chart(fig_gantt, use_container_width=True)
+                st.caption("✅ Düz çubuk = Gerçekleşti | 🔲 Çizgili çubuk = Tahmini")
+            else:
+                st.info("Gantt için Ekim tarihi girilmiş oda bulunamadı.")
 
 # Veri Yedekleme
 elif menu == "📥 Veri Yedekleme":
