@@ -456,57 +456,32 @@ elif menu == "💰 Gider Kalemleri":
         conn.close()
         
         if not df_giderler.empty:
-            st.dataframe(
-                df_giderler[['kalem_adi', 'birim_fiyat', 'aciklama']].rename(columns={
-                    'kalem_adi': 'Gider Kalemi',
-                    'birim_fiyat': 'Birim Fiyat (TL)',
-                    'aciklama': 'Açıklama'
-                }),
-                use_container_width=True
+            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+            _gd_orig = df_giderler[['id', 'kalem_adi', 'birim_fiyat', 'aciklama']].copy()
+            _gd_edited = st.data_editor(
+                _gd_orig,
+                column_config={
+                    "id": None,
+                    "kalem_adi": st.column_config.TextColumn("Gider Kalemi"),
+                    "birim_fiyat": st.column_config.NumberColumn("Birim Fiyat (TL)", min_value=0, step=100, format="%.2f"),
+                    "aciklama": st.column_config.TextColumn("Açıklama"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="gider_editor"
             )
-            
             st.markdown(f"**Toplam: {len(df_giderler)} gider kalemi**")
-            
-            # Düzenleme bölümü
-            st.markdown("---")
-            st.subheader("✏️ Gider Kalemi Düzenle")
-            
-            gider_secim = st.selectbox("Düzenlenecek Gider Kalemi", df_giderler['kalem_adi'].tolist())
-            
-            if gider_secim:
-                secili_gider = df_giderler[df_giderler['kalem_adi'] == gider_secim].iloc[0]
-                _gver = st.session_state.get('gider_ver', 0)
-                _gpfx = f"gd{int(secili_gider['id'])}v{_gver}"
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    yeni_kalem = st.text_input("Kalem Adı", value=str(secili_gider['kalem_adi']), key=f"{_gpfx}_k")
-                    yeni_fiyat = st.number_input("Birim Fiyat (TL)", value=float(secili_gider['birim_fiyat']), min_value=0.0, step=100.0, key=f"{_gpfx}_f")
-                with col2:
-                    yeni_aciklama = st.text_area("Açıklama", value=str(secili_gider['aciklama']) if secili_gider['aciklama'] else "", key=f"{_gpfx}_a")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("💾 Güncelle", type="primary", key="btn_gider_guncelle"):
-                        conn = get_db_connection()
-                        c = conn.cursor()
+            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_gider_editor_save"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                for _, _r in _gd_edited.iterrows():
+                    if pd.notna(_r.get('id')):
                         c.execute("UPDATE gider_kalemleri SET kalem_adi=?, birim_fiyat=?, aciklama=? WHERE id=?",
-                                (yeni_kalem, yeni_fiyat, yeni_aciklama, int(secili_gider['id'])))
-                        conn.commit()
-                        conn.close()
-                        st.session_state['gider_ver'] = _gver + 1
-                        st.success("✅ Gider kalemi güncellendi!")
-                        st.rerun()
-                with col2:
-                    if st.button("🗑️ Sil", type="secondary", key="btn_gider_sil"):
-                        conn = get_db_connection()
-                        c = conn.cursor()
-                        c.execute("UPDATE gider_kalemleri SET aktif=0 WHERE id=?", (int(secili_gider['id']),))
-                        conn.commit()
-                        conn.close()
-                        st.session_state['gider_ver'] = _gver + 1
-                        st.success("✅ Gider kalemi silindi!")
-                        st.rerun()
+                                  (str(_r['kalem_adi']), float(_r['birim_fiyat'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                conn.commit()
+                conn.close()
+                st.success("✅ Değişiklikler kaydedildi!")
+                st.rerun()
         else:
             st.info("Henüz gider kalemi bulunmuyor.")
     
@@ -546,49 +521,34 @@ elif menu == "🏢 Oda Yönetimi":
         conn.close()
         
         if not df_odalar.empty:
-            st.dataframe(
-                df_odalar[['oda_adi', 'alan_m2', 'kapasite_kg', 'durum', 'aciklama']].rename(columns={
-                    'oda_adi': 'Oda Adı',
-                    'alan_m2': 'Alan (m²)',
-                    'kapasite_kg': 'Kapasite (kg)',
-                    'durum': 'Durum',
-                    'aciklama': 'Açıklama'
-                }),
-                use_container_width=True
+            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+            _od_orig = df_odalar[['id', 'oda_adi', 'alan_m2', 'kapasite_kg', 'durum', 'aciklama']].copy()
+            _od_edited = st.data_editor(
+                _od_orig,
+                column_config={
+                    "id": None,
+                    "oda_adi": st.column_config.TextColumn("Oda Adı"),
+                    "alan_m2": st.column_config.NumberColumn("Alan (m²)", min_value=0, step=1, format="%.1f"),
+                    "kapasite_kg": st.column_config.NumberColumn("Kapasite (kg)", min_value=0, step=10, format="%.1f"),
+                    "durum": st.column_config.SelectboxColumn("Durum", options=["Aktif", "Hazırlık", "Bakım", "Pasif"]),
+                    "aciklama": st.column_config.TextColumn("Açıklama"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="oda_editor"
             )
-            
-            # Düzenleme
-            st.markdown("---")
-            st.subheader("✏️ Oda Düzenle")
-            
-            oda_secim = st.selectbox("Düzenlenecek Oda", df_odalar['oda_adi'].tolist())
-            
-            if oda_secim:
-                secili_oda = df_odalar[df_odalar['oda_adi'] == oda_secim].iloc[0]
-                durum_listesi = ["Aktif", "Hazırlık", "Bakım", "Pasif"]
-                _over = st.session_state.get('oda_ver', 0)
-                _opfx = f"od{int(secili_oda['id'])}v{_over}"
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    yeni_oda_adi = st.text_input("Oda Adı", value=str(secili_oda['oda_adi']), key=f"{_opfx}_adi")
-                    yeni_alan = st.number_input("Alan (m²)", value=float(secili_oda['alan_m2']) if secili_oda['alan_m2'] else 0.0, min_value=0.0, step=1.0, key=f"{_opfx}_alan")
-                    yeni_kapasite = st.number_input("Kapasite (kg)", value=float(secili_oda['kapasite_kg']) if secili_oda['kapasite_kg'] else 0.0, min_value=0.0, step=10.0, key=f"{_opfx}_kap")
-                with col2:
-                    _durum_idx = durum_listesi.index(secili_oda['durum']) if secili_oda['durum'] in durum_listesi else 0
-                    yeni_durum = st.selectbox("Durum", durum_listesi, index=_durum_idx, key=f"{_opfx}_durum")
-                    yeni_aciklama = st.text_area("Açıklama", value=str(secili_oda['aciklama']) if secili_oda['aciklama'] else "", key=f"{_opfx}_acik")
-                
-                if st.button("💾 Oda Bilgilerini Güncelle", type="primary", key="btn_oda_guncelle"):
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute("UPDATE odalar SET oda_adi=?, alan_m2=?, kapasite_kg=?, durum=?, aciklama=? WHERE id=?",
-                            (yeni_oda_adi, yeni_alan, yeni_kapasite, yeni_durum, yeni_aciklama, int(secili_oda['id'])))
-                    conn.commit()
-                    conn.close()
-                    st.session_state['oda_ver'] = _over + 1
-                    st.success("✅ Oda bilgileri güncellendi!")
-                    st.rerun()
+            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_oda_editor_save"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                for _, _r in _od_edited.iterrows():
+                    if pd.notna(_r.get('id')):
+                        c.execute("UPDATE odalar SET oda_adi=?, alan_m2=?, kapasite_kg=?, durum=?, aciklama=? WHERE id=?",
+                                  (str(_r['oda_adi']), float(_r['alan_m2'] or 0), float(_r['kapasite_kg'] or 0),
+                                   str(_r['durum'] or 'Aktif'), str(_r['aciklama'] or ''), int(_r['id'])))
+                conn.commit()
+                conn.close()
+                st.success("✅ Değişiklikler kaydedildi!")
+                st.rerun()
         else:
             st.info("Henüz oda bulunmuyor.")
     
@@ -663,25 +623,42 @@ elif menu == "🏢 Oda Yönetimi":
             
             conn = get_db_connection()
             df_kayitli_giderler = _read_sql("""
-                SELECT og.tarih, o.oda_adi, og.gider_kalemi, og.tutar, og.aciklama
+                SELECT og.id, og.tarih, o.oda_adi, og.gider_kalemi, og.tutar, og.aciklama
                 FROM oda_giderleri og
                 JOIN odalar o ON og.oda_id = o.id
                 ORDER BY og.tarih DESC
-                LIMIT 20
+                LIMIT 100
             """, conn)
             conn.close()
             
             if not df_kayitli_giderler.empty:
-                st.dataframe(
-                    df_kayitli_giderler.rename(columns={
-                        'tarih': 'Tarih',
-                        'oda_adi': 'Oda',
-                        'gider_kalemi': 'Gider Kalemi',
-                        'tutar': 'Tutar (TL)',
-                        'aciklama': 'Açıklama'
-                    }),
-                    use_container_width=True
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                _og_orig = df_kayitli_giderler.copy()
+                _og_edited = st.data_editor(
+                    _og_orig,
+                    column_config={
+                        "id": None,
+                        "tarih": st.column_config.DateColumn("Tarih"),
+                        "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
+                        "gider_kalemi": st.column_config.TextColumn("Gider Kalemi"),
+                        "tutar": st.column_config.NumberColumn("Tutar (TL)", min_value=0, step=100, format="%.2f"),
+                        "aciklama": st.column_config.TextColumn("Açıklama"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="og_editor"
                 )
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_og_editor_save"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    for _, _r in _og_edited.iterrows():
+                        if pd.notna(_r.get('id')):
+                            c.execute("UPDATE oda_giderleri SET tarih=?, gider_kalemi=?, tutar=?, aciklama=? WHERE id=?",
+                                      (str(_r['tarih']), str(_r['gider_kalemi']), float(_r['tutar'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Değişiklikler kaydedildi!")
+                    st.rerun()
         else:
             st.warning("⚠️ Önce oda ve gider kalemleri eklemelisiniz!")
 
@@ -746,7 +723,7 @@ elif menu == "📊 Günlük Hasat":
         conn = get_db_connection()
         if filtre_oda == "Tümü":
             df_hasat = _read_sql(f"""
-                SELECT gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
+                SELECT gh.id, gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
                 FROM gunluk_hasat gh
                 JOIN odalar o ON gh.oda_id = o.id
                 WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
@@ -754,7 +731,7 @@ elif menu == "📊 Günlük Hasat":
             """, conn)
         else:
             df_hasat = _read_sql(f"""
-                SELECT gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
+                SELECT gh.id, gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
                 FROM gunluk_hasat gh
                 JOIN odalar o ON gh.oda_id = o.id
                 WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
@@ -764,16 +741,33 @@ elif menu == "📊 Günlük Hasat":
         conn.close()
         
         if not df_hasat.empty:
-            st.dataframe(
-                df_hasat.rename(columns={
-                    'tarih': 'Tarih',
-                    'oda_adi': 'Oda',
-                    'hasat_kg': 'Hasat (kg)',
-                    'kalite': 'Kalite',
-                    'aciklama': 'Açıklama'
-                }),
-                use_container_width=True
+            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+            _hs_orig = df_hasat.copy()
+            _hs_edited = st.data_editor(
+                _hs_orig,
+                column_config={
+                    "id": None,
+                    "tarih": st.column_config.DateColumn("Tarih"),
+                    "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
+                    "hasat_kg": st.column_config.NumberColumn("Hasat (kg)", min_value=0, step=0.5, format="%.2f"),
+                    "kalite": st.column_config.SelectboxColumn("Kalite", options=["A Kalite", "B Kalite", "C Kalite", "Karışık"]),
+                    "aciklama": st.column_config.TextColumn("Açıklama"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="hasat_editor"
             )
+            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_hasat_editor_save"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                for _, _r in _hs_edited.iterrows():
+                    if pd.notna(_r.get('id')):
+                        c.execute("UPDATE gunluk_hasat SET tarih=?, hasat_kg=?, kalite=?, aciklama=? WHERE id=?",
+                                  (str(_r['tarih']), float(_r['hasat_kg'] or 0), str(_r['kalite'] or ''), str(_r['aciklama'] or ''), int(_r['id'])))
+                conn.commit()
+                conn.close()
+                st.success("✅ Değişiklikler kaydedildi!")
+                st.rerun()
             
             # Özet istatistikler
             st.markdown("---")
@@ -791,7 +785,7 @@ elif menu == "📊 Günlük Hasat":
 elif menu == "🌡️ İklim Verileri":
     st.title("🌡️ İklim Verileri Takibi")
     
-    tab1, tab2 = st.tabs(["➕ Veri Gir", "📊 İklim Grafikleri"])
+    tab1, tab2, tab3 = st.tabs(["➕ Veri Gir", "📊 İklim Grafikleri", "📋 Kayıtlar ve Düzenle"])
     
     with tab1:
         conn = get_db_connection()
@@ -916,12 +910,72 @@ elif menu == "🌡️ İklim Verileri":
         else:
             st.warning("⚠️ Önce oda eklemelisiniz!")
 
+    with tab3:
+        st.subheader("📋 İklim Kayıtları - Düzenle")
+        conn = get_db_connection()
+        df_odalar_ik3 = _read_sql("SELECT DISTINCT oda_adi FROM odalar ORDER BY oda_adi", conn)
+        conn.close()
+        if not df_odalar_ik3.empty:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                ik3_oda = st.selectbox("Oda", ["Tümü"] + df_odalar_ik3['oda_adi'].tolist(), key="ik3_oda")
+            with col2:
+                ik3_bas = st.date_input("Başlangıç", value=date.today() - timedelta(days=7), key="ik3_bas")
+            with col3:
+                ik3_bit = st.date_input("Bitiş", value=date.today(), key="ik3_bit")
+            ik3_where = f"AND o.oda_adi = '{ik3_oda}'" if ik3_oda != "Tümü" else ""
+            conn = get_db_connection()
+            df_ik3 = _read_sql(f"""
+                SELECT iv.id, iv.tarih, iv.saat, o.oda_adi, iv.sicaklik, iv.nem, iv.co2, iv.aciklama
+                FROM iklim_verileri iv
+                JOIN odalar o ON iv.oda_id = o.id
+                WHERE iv.tarih BETWEEN '{ik3_bas}' AND '{ik3_bit}'
+                {ik3_where}
+                ORDER BY iv.tarih DESC, iv.saat DESC
+                LIMIT 200
+            """, conn)
+            conn.close()
+            if not df_ik3.empty:
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                _ik3_orig = df_ik3.copy()
+                _ik3_edited = st.data_editor(
+                    _ik3_orig,
+                    column_config={
+                        "id": None,
+                        "tarih": st.column_config.DateColumn("Tarih"),
+                        "saat": st.column_config.TextColumn("Saat"),
+                        "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
+                        "sicaklik": st.column_config.NumberColumn("Sıcaklık (°C)", min_value=-10, max_value=50, step=0.1, format="%.1f"),
+                        "nem": st.column_config.NumberColumn("Nem (%)", min_value=0, max_value=100, step=1, format="%.1f"),
+                        "co2": st.column_config.NumberColumn("CO₂ (ppm)", min_value=0, max_value=5000, step=10),
+                        "aciklama": st.column_config.TextColumn("Açıklama"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="iklim_editor"
+                )
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_iklim_editor_save"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    for _, _r in _ik3_edited.iterrows():
+                        if pd.notna(_r.get('id')):
+                            c.execute("UPDATE iklim_verileri SET tarih=?, saat=?, sicaklik=?, nem=?, co2=?, aciklama=? WHERE id=?",
+                                      (str(_r['tarih']), str(_r['saat']), float(_r['sicaklik'] or 0), float(_r['nem'] or 0), float(_r['co2'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Değişiklikler kaydedildi!")
+                    st.rerun()
+            else:
+                st.info("Seçilen kriterlere uygun kayıt bulunamadı.")
+        else:
+            st.warning("⚠️ Önce oda eklemelisiniz!")
+
 # Satış İşlemleri
 elif menu == "💵 Satış İşlemleri":
     st.title("💵 Satış İşlemleri")
 
-    tab_hesap, tab_tahsilat, tab_yonetim = st.tabs([
-        "📊 Cari Hesap Defteri", "💳 Tahsilat / Ödeme", "🧑 Cari Yönetim"
+    tab_hesap, tab_tahsilat, tab_duzenleme, tab_yonetim = st.tabs([
+        "📊 Cari Hesap Defteri", "💳 Tahsilat / Ödeme", "✏️ Kayıt Düzenle", "🧑 Cari Yönetim"
     ])
 
     def _cariler_yukle():
@@ -1190,7 +1244,105 @@ elif menu == "💵 Satış İşlemleri":
                 else:
                     st.error("❌ Tutar girilmelidir!")
 
-    # ── TAB 3: CARİ YÖNETİM ───────────────────────────────────────────
+    # ── TAB 3: KAYIT DÜZENLE ──────────────────────────────────────────
+    with tab_duzenleme:
+        st.subheader("✏️ Geçmiş Kayıtları Düzenle")
+        df_cariler_duz = _cariler_yukle()
+        if df_cariler_duz.empty:
+            st.warning("⚠️ Önce Cari Yönetim sekmesinden cari ekleyin!")
+        else:
+            _duz_cari = st.selectbox("Cari Seçin", df_cariler_duz['cari_adi'].tolist(), key="duz_cari_sel")
+            _duz_cari_id = int(df_cariler_duz[df_cariler_duz['cari_adi'] == _duz_cari]['id'].values[0])
+
+            duz_tab1, duz_tab2 = st.tabs(["💰 Satış Kayıtları", "📋 Alış / Tahsilat / Ödeme"])
+
+            with duz_tab1:
+                conn = get_db_connection()
+                _duz_sat = _read_sql("""
+                    SELECT s.id, s.tarih, o.oda_adi, s.satis_kg, s.birim_fiyat, s.toplam_tutar,
+                           s.fire_kg, s.nakliye_ucreti, s.aciklama
+                    FROM satislar s
+                    JOIN odalar o ON s.oda_id = o.id
+                    WHERE s.cari_id = ?
+                    ORDER BY s.tarih DESC
+                """, conn, params=(_duz_cari_id,))
+                conn.close()
+                if not _duz_sat.empty:
+                    st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                    _duzsat_orig = _duz_sat.copy()
+                    _duzsat_edited = st.data_editor(
+                        _duzsat_orig,
+                        column_config={
+                            "id": None,
+                            "tarih": st.column_config.DateColumn("Tarih"),
+                            "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
+                            "satis_kg": st.column_config.NumberColumn("Satış (kg)", min_value=0, step=0.5, format="%.2f"),
+                            "birim_fiyat": st.column_config.NumberColumn("Birim Fiyat", min_value=0, step=1, format="%.2f"),
+                            "toplam_tutar": st.column_config.NumberColumn("Toplam (TL)", min_value=0, step=1, format="%.2f"),
+                            "fire_kg": st.column_config.NumberColumn("Fire (kg)", min_value=0, step=0.1, format="%.2f"),
+                            "nakliye_ucreti": st.column_config.NumberColumn("Nakliye (TL)", min_value=0, step=1, format="%.2f"),
+                            "aciklama": st.column_config.TextColumn("Açıklama"),
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        key="duz_sat_editor"
+                    )
+                    if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_duzsat_save"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        for _, _r in _duzsat_edited.iterrows():
+                            if pd.notna(_r.get('id')):
+                                c.execute("UPDATE satislar SET tarih=?, satis_kg=?, birim_fiyat=?, toplam_tutar=?, fire_kg=?, nakliye_ucreti=?, aciklama=? WHERE id=?",
+                                          (str(_r['tarih']), float(_r['satis_kg'] or 0), float(_r['birim_fiyat'] or 0),
+                                           float(_r['toplam_tutar'] or 0), float(_r['fire_kg'] or 0),
+                                           float(_r['nakliye_ucreti'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                        conn.commit()
+                        conn.close()
+                        st.success("✅ Değişiklikler kaydedildi!")
+                        st.rerun()
+                else:
+                    st.info("Bu cariye ait satış kaydı yok.")
+
+            with duz_tab2:
+                conn = get_db_connection()
+                _duz_ch = _read_sql("""
+                    SELECT id, tarih, hareket_turu, tutar, aciklama
+                    FROM cari_hareketler
+                    WHERE cari_id = ? AND hareket_turu != 'SATIS'
+                    ORDER BY tarih DESC
+                """, conn, params=(_duz_cari_id,))
+                conn.close()
+                if not _duz_ch.empty:
+                    st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                    _duzch_orig = _duz_ch.copy()
+                    _duzch_edited = st.data_editor(
+                        _duzch_orig,
+                        column_config={
+                            "id": None,
+                            "tarih": st.column_config.DateColumn("Tarih"),
+                            "hareket_turu": st.column_config.SelectboxColumn("Tür", options=["ALIS", "TAHSILAT", "ODEME"]),
+                            "tutar": st.column_config.NumberColumn("Tutar (TL)", min_value=0, step=1, format="%.2f"),
+                            "aciklama": st.column_config.TextColumn("Açıklama"),
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        key="duz_ch_editor"
+                    )
+                    if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_duzch_save"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        for _, _r in _duzch_edited.iterrows():
+                            if pd.notna(_r.get('id')):
+                                c.execute("UPDATE cari_hareketler SET tarih=?, hareket_turu=?, tutar=?, aciklama=? WHERE id=?",
+                                          (str(_r['tarih']), str(_r['hareket_turu']), float(_r['tutar'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                        conn.commit()
+                        conn.close()
+                        st.success("✅ Değişiklikler kaydedildi!")
+                        st.rerun()
+                else:
+                    st.info("Bu cariye ait alış/tahsilat/ödeme kaydı yok.")
+
+    # ── TAB 4: CARİ YÖNETİM ───────────────────────────────────────────
     with tab_yonetim:
         st.subheader("🧑 Cari Yönetim")
 
@@ -1202,52 +1354,33 @@ elif menu == "💵 Satış İşlemleri":
             conn.close()
 
             if not df_tm_cariler.empty:
-                st.dataframe(
-                    df_tm_cariler[['cari_adi','telefon','adres','aciklama']].rename(columns={
-                        'cari_adi':'Cari Adı','telefon':'Telefon',
-                        'adres':'Adres','aciklama':'Açıklama'
-                    }),
-                    use_container_width=True
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                _cr_orig = df_tm_cariler[['id', 'cari_adi', 'telefon', 'adres', 'aciklama']].copy()
+                _cr_edited = st.data_editor(
+                    _cr_orig,
+                    column_config={
+                        "id": None,
+                        "cari_adi": st.column_config.TextColumn("Cari Adı"),
+                        "telefon": st.column_config.TextColumn("Telefon"),
+                        "adres": st.column_config.TextColumn("Adres"),
+                        "aciklama": st.column_config.TextColumn("Açıklama"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="cari_editor"
                 )
-                st.markdown("---")
-                st.markdown("**✏️ Cari Düzenle**")
-                cari_duzenle_sec = st.selectbox("Düzenlenecek Cari", df_tm_cariler['cari_adi'].tolist())
-                secili_c = df_tm_cariler[df_tm_cariler['cari_adi'] == cari_duzenle_sec].iloc[0]
-                _cver = st.session_state.get('cari_ver', 0)
-                _cpfx = f"cr{int(secili_c['id'])}v{_cver}"
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    yeni_cari_adi  = st.text_input("Cari Adı",  value=str(secili_c['cari_adi']),  key=f"{_cpfx}_adi")
-                    yeni_cari_tel  = st.text_input("Telefon",    value=str(secili_c['telefon'])  if secili_c['telefon']  else "", key=f"{_cpfx}_tel")
-                with col2:
-                    yeni_cari_adres = st.text_input("Adres",    value=str(secili_c['adres'])    if secili_c['adres']    else "", key=f"{_cpfx}_adr")
-                    yeni_cari_acik  = st.text_area("Açıklama",  value=str(secili_c['aciklama']) if secili_c['aciklama'] else "", key=f"{_cpfx}_ac")
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("💾 Güncelle", type="primary", key="btn_cari_guncelle"):
-                        conn = get_db_connection()
-                        c = conn.cursor()
-                        c.execute("UPDATE cariler SET cari_adi=?, telefon=?, adres=?, aciklama=? WHERE id=?",
-                                  (yeni_cari_adi, yeni_cari_tel, yeni_cari_adres, yeni_cari_acik, int(secili_c['id'])))
-                        c.execute("UPDATE satislar SET alan_kisi=? WHERE cari_id=?",
-                                  (yeni_cari_adi, int(secili_c['id'])))
-                        conn.commit()
-                        conn.close()
-                        st.session_state['cari_ver'] = _cver + 1
-                        st.success("✅ Cari güncellendi!")
-                        st.rerun()
-                with col2:
-                    if st.button("🗑️ Sil (Pasif Yap)", type="secondary", key="btn_cari_sil"):
-                        conn = get_db_connection()
-                        c = conn.cursor()
-                        c.execute("UPDATE cariler SET aktif=0 WHERE id=?", (int(secili_c['id']),))
-                        conn.commit()
-                        conn.close()
-                        st.session_state['cari_ver'] = _cver + 1
-                        st.success("✅ Cari pasif edildi!")
-                        st.rerun()
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_cari_editor_save"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    for _, _r in _cr_edited.iterrows():
+                        if pd.notna(_r.get('id')):
+                            c.execute("UPDATE cariler SET cari_adi=?, telefon=?, adres=?, aciklama=? WHERE id=?",
+                                      (str(_r['cari_adi']), str(_r['telefon'] or ''), str(_r['adres'] or ''), str(_r['aciklama'] or ''), int(_r['id'])))
+                            c.execute("UPDATE satislar SET alan_kisi=? WHERE cari_id=?", (str(_r['cari_adi']), int(_r['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Değişiklikler kaydedildi!")
+                    st.rerun()
             else:
                 st.info("Henüz cari kaydı yok.")
 
@@ -1440,59 +1573,34 @@ elif menu == "👷 İşçi Puantaj":
         conn.close()
         
         if not df_isciler.empty:
-            st.dataframe(
-                df_isciler[['ad_soyad', 'telefon', 'pozisyon', 'gunluk_ucret', 'saat_ucreti']].rename(columns={
-                    'ad_soyad': 'Ad Soyad',
-                    'telefon': 'Telefon',
-                    'pozisyon': 'Pozisyon',
-                    'gunluk_ucret': 'Günlük Ücret (TL)',
-                    'saat_ucreti': 'Saat Ücreti (TL)'
-                }),
-                use_container_width=True
+            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+            _is_orig = df_isciler[['id', 'ad_soyad', 'telefon', 'pozisyon', 'gunluk_ucret', 'saat_ucreti']].copy()
+            _is_edited = st.data_editor(
+                _is_orig,
+                column_config={
+                    "id": None,
+                    "ad_soyad": st.column_config.TextColumn("Ad Soyad"),
+                    "telefon": st.column_config.TextColumn("Telefon"),
+                    "pozisyon": st.column_config.TextColumn("Pozisyon"),
+                    "gunluk_ucret": st.column_config.NumberColumn("Günlük Ücret (TL)", min_value=0, step=50, format="%.2f"),
+                    "saat_ucreti": st.column_config.NumberColumn("Saat Ücreti (TL)", min_value=0, step=5, format="%.2f"),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key="isci_editor"
             )
-            
-            # Düzenleme
-            st.markdown("---")
-            st.subheader("✏️ İşçi Düzenle")
-            
-            isci_secim = st.selectbox("Düzenlenecek İşçi", df_isciler['ad_soyad'].tolist())
-            
-            if isci_secim:
-                secili_isci = df_isciler[df_isciler['ad_soyad'] == isci_secim].iloc[0]
-                _iver = st.session_state.get('isci_ver', 0)
-                _ipfx = f"is{int(secili_isci['id'])}v{_iver}"
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    yeni_ad = st.text_input("Ad Soyad", value=str(secili_isci['ad_soyad']), key=f"{_ipfx}_ad")
-                    yeni_telefon = st.text_input("Telefon", value=str(secili_isci['telefon']) if secili_isci['telefon'] else "", key=f"{_ipfx}_tel")
-                    yeni_pozisyon = st.text_input("Pozisyon", value=str(secili_isci['pozisyon']) if secili_isci['pozisyon'] else "", key=f"{_ipfx}_poz")
-                with col2:
-                    yeni_gunluk = st.number_input("Günlük Ücret (TL)", value=float(secili_isci['gunluk_ucret']), min_value=0.0, step=50.0, key=f"{_ipfx}_gun")
-                    yeni_saat = st.number_input("Saat Ücreti (TL)", value=float(secili_isci['saat_ucreti']), min_value=0.0, step=5.0, key=f"{_ipfx}_sat")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("💾 Güncelle", type="primary", key="btn_isci_guncelle"):
-                        conn = get_db_connection()
-                        c = conn.cursor()
+            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_isci_editor_save"):
+                conn = get_db_connection()
+                c = conn.cursor()
+                for _, _r in _is_edited.iterrows():
+                    if pd.notna(_r.get('id')):
                         c.execute("UPDATE isciler SET ad_soyad=?, telefon=?, pozisyon=?, gunluk_ucret=?, saat_ucreti=? WHERE id=?",
-                                (yeni_ad, yeni_telefon, yeni_pozisyon, yeni_gunluk, yeni_saat, int(secili_isci['id'])))
-                        conn.commit()
-                        conn.close()
-                        st.session_state['isci_ver'] = _iver + 1
-                        st.success("✅ İşçi bilgileri güncellendi!")
-                        st.rerun()
-                with col2:
-                    if st.button("🗑️ Sil (Pasif Yap)", type="secondary", key="btn_isci_sil"):
-                        conn = get_db_connection()
-                        c = conn.cursor()
-                        c.execute("UPDATE isciler SET aktif=0 WHERE id=?", (int(secili_isci['id']),))
-                        conn.commit()
-                        conn.close()
-                        st.session_state['isci_ver'] = _iver + 1
-                        st.success("✅ İşçi pasif edildi!")
-                        st.rerun()
+                                  (str(_r['ad_soyad']), str(_r['telefon'] or ''), str(_r['pozisyon'] or ''),
+                                   float(_r['gunluk_ucret'] or 0), float(_r['saat_ucreti'] or 0), int(_r['id'])))
+                conn.commit()
+                conn.close()
+                st.success("✅ Değişiklikler kaydedildi!")
+                st.rerun()
         else:
             st.info("Henüz işçi kaydı bulunmuyor.")
     
@@ -1583,29 +1691,49 @@ elif menu == "👷 İşçi Puantaj":
             
             conn = get_db_connection()
             df_son_puantaj = _read_sql("""
-                SELECT p.tarih, i.ad_soyad, p.tatil, p.giris_saati, p.cikis_saati, p.toplam_saat, p.mesai_saati, p.aciklama
+                SELECT p.id, p.tarih, i.ad_soyad, p.tatil, p.giris_saati, p.cikis_saati, p.toplam_saat, p.mesai_saati, p.aciklama
                 FROM puantaj p
                 JOIN isciler i ON p.isci_id = i.id
                 ORDER BY p.tarih DESC, i.ad_soyad
-                LIMIT 20
+                LIMIT 50
             """, conn)
             conn.close()
             
             if not df_son_puantaj.empty:
-                df_son_puantaj['tatil'] = df_son_puantaj['tatil'].apply(lambda x: '🏖️ Tatil' if x == 1 else '✅ Çalışma')
-                st.dataframe(
-                    df_son_puantaj.rename(columns={
-                        'tarih': 'Tarih',
-                        'ad_soyad': 'İşçi',
-                        'tatil': 'Durum',
-                        'giris_saati': 'Giriş',
-                        'cikis_saati': 'Çıkış',
-                        'toplam_saat': 'Toplam Saat',
-                        'mesai_saati': 'Mesai',
-                        'aciklama': 'Açıklama'
-                    }),
-                    use_container_width=True
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Kaydet' butonuna basın.")
+                _pnt_orig = df_son_puantaj.copy()
+                _pnt_orig['tatil'] = _pnt_orig['tatil'].apply(lambda x: bool(x))
+                _pnt_edited = st.data_editor(
+                    _pnt_orig,
+                    column_config={
+                        "id": None,
+                        "tarih": st.column_config.DateColumn("Tarih"),
+                        "ad_soyad": st.column_config.TextColumn("İşçi", disabled=True),
+                        "tatil": st.column_config.CheckboxColumn("Tatil?"),
+                        "giris_saati": st.column_config.TextColumn("Giriş"),
+                        "cikis_saati": st.column_config.TextColumn("Çıkış"),
+                        "toplam_saat": st.column_config.NumberColumn("Toplam Saat", min_value=0, step=0.5, format="%.1f"),
+                        "mesai_saati": st.column_config.NumberColumn("Mesai", min_value=0, step=0.5, format="%.1f"),
+                        "aciklama": st.column_config.TextColumn("Açıklama"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="puantaj_editor"
                 )
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_pnt_editor_save"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    for _, _r in _pnt_edited.iterrows():
+                        if pd.notna(_r.get('id')):
+                            c.execute("UPDATE puantaj SET tarih=?, tatil=?, giris_saati=?, cikis_saati=?, toplam_saat=?, mesai_saati=?, aciklama=? WHERE id=?",
+                                      (str(_r['tarih']), 1 if _r['tatil'] else 0,
+                                       str(_r['giris_saati'] or ''), str(_r['cikis_saati'] or ''),
+                                       float(_r['toplam_saat'] or 0), float(_r['mesai_saati'] or 0),
+                                       str(_r['aciklama'] or ''), int(_r['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Değişiklikler kaydedildi!")
+                    st.rerun()
         else:
             st.warning("⚠️ Önce işçi eklemelisiniz!")
     
