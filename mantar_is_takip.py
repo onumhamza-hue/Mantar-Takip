@@ -398,8 +398,8 @@ st.sidebar.markdown("---")
 menu = st.sidebar.radio(
     "Menü",
     ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
-     "� Oda Bilgi Kartı",
-     "�🌱 Üretim Takvimi",
+     "📋 Oda Bilgi Kartı",
+     "🌱 Üretim Takvimi",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
      "📥 Veri Yedekleme"]
@@ -1992,8 +1992,8 @@ elif menu == "💼 Gelir-Gider Analizi":
     st.plotly_chart(fig_karsilastirma, use_container_width=True)
 
 # Oda Bilgi Kartı
-elif menu == "🃏 Oda Bilgi Kartı":
-    st.title("🃏 Oda Bilgi Kartı")
+elif menu == "📋 Oda Bilgi Kartı":
+    st.title("📋 Oda Bilgi Kartı")
     st.markdown("Seçili odaya ait tüm veriler: temel bilgiler, üretim takvimi, giderler, hasat, satış ve iklim.")
 
     conn = get_db_connection()
