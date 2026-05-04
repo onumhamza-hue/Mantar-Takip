@@ -2091,7 +2091,10 @@ elif menu == "🌱 Üretim Takvimi":
                         with c1:
                             st.metric("Ekimden Bu Yana", f"{(bugun - ekim_d).days} gün")
                         with c2:
-                            tahmini_flash = ekim_d + timedelta(days=10 + 1 + 9 + 3 + 11)
+                            if toprak_d:
+                                tahmini_flash = toprak_d + timedelta(days=23)
+                            else:
+                                tahmini_flash = ekim_d + timedelta(days=10 + 1 + 9 + 3 + 11)
                             if flash1_d:
                                 st.metric("1. Flaş Başladı", flash1_d.strftime('%d.%m.%Y'))
                             else:
@@ -2150,7 +2153,13 @@ elif menu == "🌱 Üretim Takvimi":
                 tp_t = toprak_d or b_t       + timedelta(days=1)
                 tr_t = tirmik_d or tp_t      + timedelta(days=9)
                 hv_t = hava_d   or tr_t      + timedelta(days=3)
-                fl_t = flash1_d or hv_t      + timedelta(days=11)
+                # Toprak serim tarihi biliniyorsa 1. Flaş = toprak + 23 gün
+                if flash1_d:
+                    fl_t = flash1_d
+                elif toprak_d:
+                    fl_t = toprak_d + timedelta(days=23)
+                else:
+                    fl_t = hv_t + timedelta(days=11)
 
                 segmentler = [
                     ("Ekim → Baskı",    ekim_d,  b_t,   baski_d is not None),
