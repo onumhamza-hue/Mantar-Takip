@@ -398,7 +398,8 @@ st.sidebar.markdown("---")
 menu = st.sidebar.radio(
     "Menü",
     ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
-     "🌱 Üretim Takvimi",
+     "� Oda Bilgi Kartı",
+     "�🌱 Üretim Takvimi",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
      "📥 Veri Yedekleme"]
@@ -1989,6 +1990,183 @@ elif menu == "💼 Gelir-Gider Analizi":
                                color='Kategori',
                                color_discrete_map={'Gelir': 'green', 'Gider': 'red', 'Net Kâr': 'blue'})
     st.plotly_chart(fig_karsilastirma, use_container_width=True)
+
+# Oda Bilgi Kartı
+elif menu == "🃏 Oda Bilgi Kartı":
+    st.title("🃏 Oda Bilgi Kartı")
+    st.markdown("Seçili odaya ait tüm veriler: temel bilgiler, üretim takvimi, giderler, hasat, satış ve iklim.")
+
+    conn = get_db_connection()
+    df_odalar_kart = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
+    conn.close()
+
+    if df_odalar_kart.empty:
+        st.warning("⚠️ Henüz oda eklenmemiş. Oda Yönetimi menüsünden ekleyin.")
+    else:
+        secili_kart_oda = st.selectbox("🏢 Oda Seçin", df_odalar_kart['oda_adi'].tolist(), key="kart_oda_sec")
+        kart_oda_id = int(df_odalar_kart[df_odalar_kart['oda_adi'] == secili_kart_oda]['id'].values[0])
+
+        conn = get_db_connection()
+        df_kart_temel  = _read_sql(f"SELECT * FROM odalar WHERE id={kart_oda_id}", conn)
+        df_kart_uretim = _read_sql(f"""
+            SELECT donem_no, ekim_tarihi, baski_tarihi, toprak_serim_tarihi,
+                   tirmik_tarihi, hava_verme_tarihi, flash1_tarihi, aciklama
+            FROM oda_uretim_takip WHERE oda_id={kart_oda_id} ORDER BY donem_no
+        """, conn)
+        df_kart_gider  = _read_sql(f"""
+            SELECT tarih, gider_kalemi, tutar, aciklama
+            FROM oda_giderleri WHERE oda_id={kart_oda_id} ORDER BY tarih DESC
+        """, conn)
+        df_kart_hasat  = _read_sql(f"""
+            SELECT tarih, hasat_kg, kalite, aciklama
+            FROM gunluk_hasat WHERE oda_id={kart_oda_id} ORDER BY tarih DESC
+        """, conn)
+        df_kart_satis  = _read_sql(f"""
+            SELECT tarih, alan_kisi, satis_kg, birim_fiyat, toplam_tutar, fire_kg, aciklama
+            FROM satislar WHERE oda_id={kart_oda_id} ORDER BY tarih DESC
+        """, conn)
+        df_kart_iklim  = _read_sql(f"""
+            SELECT tarih, saat, sicaklik, nem, co2, aciklama
+            FROM iklim_verileri WHERE oda_id={kart_oda_id}
+            ORDER BY tarih DESC, saat DESC LIMIT 50
+        """, conn)
+        conn.close()
+
+        st.markdown("---")
+
+        # ── 1. Temel Bilgiler ─────────────────────────────────────────────────
+        st.markdown("### 🏢 Temel Bilgiler")
+        if not df_kart_temel.empty:
+            _kr = df_kart_temel.iloc[0]
+            _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+            with _kc1:
+                st.metric("Alan", f"{float(_kr['alan_m2'] or 0):.1f} m²")
+            with _kc2:
+                st.metric("Kapasite", f"{float(_kr['kapasite_kg'] or 0):.0f} kg")
+            with _kc3:
+                _kdurum = str(_kr['durum'] or 'Bilinmiyor')
+                if _kdurum == 'Aktif':
+                    st.success(f"🟢 {_kdurum}")
+                elif _kdurum == 'Pasif':
+                    st.error(f"🔴 {_kdurum}")
+                else:
+                    st.warning(f"🟡 {_kdurum}")
+            with _kc4:
+                _kacik = str(_kr['aciklama'] or '')
+                if _kacik and _kacik not in ('None', 'nan'):
+                    st.caption(f"📝 {_kacik}")
+
+        # ── 2. Üretim Takvimi ──────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 🌱 Üretim Takvimi")
+        if not df_kart_uretim.empty:
+            st.dataframe(
+                df_kart_uretim.rename(columns={
+                    'donem_no': 'Dönem',
+                    'ekim_tarihi': '🌱 Ekim',
+                    'baski_tarihi': '⚙️ Baskı',
+                    'toprak_serim_tarihi': '🌍 Toprak Serim',
+                    'tirmik_tarihi': '🔧 Tırmık',
+                    'hava_verme_tarihi': '💨 Hava Verme',
+                    'flash1_tarihi': '🍄 1. Flaş',
+                    'aciklama': 'Not',
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("Bu oda için üretim takvimi kaydı yok.")
+
+        # ── 3. Giderler ────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 💰 Giderler")
+        if not df_kart_gider.empty:
+            _gkc1, _gkc2 = st.columns([1, 2])
+            with _gkc1:
+                st.metric("Toplam Gider", f"{df_kart_gider['tutar'].sum():,.2f} TL")
+                st.metric("Kayıt Sayısı", len(df_kart_gider))
+            with _gkc2:
+                _gozet = (df_kart_gider.groupby('gider_kalemi')['tutar']
+                          .sum().reset_index()
+                          .sort_values('tutar', ascending=False)
+                          .rename(columns={'gider_kalemi': 'Gider Kalemi', 'tutar': 'Toplam (TL)'}))
+                st.dataframe(_gozet, use_container_width=True, hide_index=True)
+            st.markdown("**📋 Tüm Gider Kayıtları:**")
+            st.dataframe(
+                df_kart_gider.rename(columns={
+                    'tarih': 'Tarih', 'gider_kalemi': 'Gider Kalemi',
+                    'tutar': 'Tutar (TL)', 'aciklama': 'Açıklama',
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Bu oda için gider kaydı yok.")
+
+        # ── 4. Hasat ───────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 📊 Hasat")
+        if not df_kart_hasat.empty:
+            _hkc1, _hkc2, _hkc3 = st.columns(3)
+            with _hkc1:
+                st.metric("Toplam Hasat", f"{df_kart_hasat['hasat_kg'].sum():.2f} kg")
+            with _hkc2:
+                st.metric("Ortalama / Kayıt", f"{df_kart_hasat['hasat_kg'].mean():.2f} kg")
+            with _hkc3:
+                st.metric("Kayıt Sayısı", len(df_kart_hasat))
+            st.dataframe(
+                df_kart_hasat.rename(columns={
+                    'tarih': 'Tarih', 'hasat_kg': 'Hasat (kg)',
+                    'kalite': 'Kalite', 'aciklama': 'Açıklama',
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Bu oda için hasat kaydı yok.")
+
+        # ── 5. Satışlar ────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 💵 Satışlar")
+        if not df_kart_satis.empty:
+            _skc1, _skc2, _skc3 = st.columns(3)
+            with _skc1:
+                st.metric("Toplam Satış", f"{df_kart_satis['satis_kg'].sum():.2f} kg")
+            with _skc2:
+                st.metric("Toplam Gelir", f"{df_kart_satis['toplam_tutar'].sum():,.2f} TL")
+            with _skc3:
+                st.metric("Toplam Fire", f"{df_kart_satis['fire_kg'].sum():.2f} kg")
+            st.dataframe(
+                df_kart_satis.rename(columns={
+                    'tarih': 'Tarih', 'alan_kisi': 'Müşteri',
+                    'satis_kg': 'Satış (kg)', 'birim_fiyat': 'Fiyat (TL/kg)',
+                    'toplam_tutar': 'Toplam (TL)', 'fire_kg': 'Fire (kg)',
+                    'aciklama': 'Açıklama',
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Bu oda için satış kaydı yok.")
+
+        # ── 6. İklim ───────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 🌡️ İklim Verileri (Son 50 Kayıt)")
+        if not df_kart_iklim.empty:
+            _ikc1, _ikc2, _ikc3 = st.columns(3)
+            with _ikc1:
+                st.metric("Ort. Sıcaklık", f"{df_kart_iklim['sicaklik'].mean():.1f} °C")
+            with _ikc2:
+                st.metric("Ort. Nem", f"{df_kart_iklim['nem'].mean():.1f} %")
+            with _ikc3:
+                st.metric("Ort. CO₂", f"{df_kart_iklim['co2'].mean():.0f} ppm")
+            st.dataframe(
+                df_kart_iklim.rename(columns={
+                    'tarih': 'Tarih', 'saat': 'Saat',
+                    'sicaklik': 'Sıcaklık (°C)', 'nem': 'Nem (%)',
+                    'co2': 'CO₂ (ppm)', 'aciklama': 'Açıklama',
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Bu oda için iklim verisi yok.")
 
 # Üretim Takvimi
 elif menu == "🌱 Üretim Takvimi":
