@@ -215,9 +215,9 @@ def _cache_temizle():
     _cached_cariler.clear()
 
 def _rerun():
-    """Cache temizleyerek yeniden çalıştır — her _rerun() yerine kullan."""
+    """Cache temizleyerek yeniden çalıştır — her st.rerun() yerine kullan."""
     _cache_temizle()
-    _rerun()
+    st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
 
