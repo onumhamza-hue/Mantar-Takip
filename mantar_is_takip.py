@@ -2191,12 +2191,20 @@ elif menu == "🌱 Üretim Takvimi":
                     labels={"Oda": "Oda / Dönem"},
                     hover_data=["Durum", "Başlangıç", "Bitiş"],
                 )
-                fig_gantt.add_vline(
-                    x=bugun.isoformat(),
-                    line_dash="dash",
-                    line_color="crimson",
-                    annotation_text="Bugün",
-                    annotation_position="top right",
+                fig_gantt.add_shape(
+                    type="line",
+                    x0=bugun.isoformat(), x1=bugun.isoformat(),
+                    y0=0, y1=1,
+                    xref="x", yref="paper",
+                    line=dict(color="crimson", dash="dash", width=2),
+                )
+                fig_gantt.add_annotation(
+                    x=bugun.isoformat(), y=1,
+                    xref="x", yref="paper",
+                    text="Bugün",
+                    showarrow=False,
+                    font=dict(color="crimson"),
+                    xanchor="left",
                 )
                 fig_gantt.update_yaxes(autorange="reversed")
                 fig_gantt.update_layout(
