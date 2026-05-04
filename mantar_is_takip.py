@@ -1568,19 +1568,16 @@ elif menu == "📈 Raporlar ve Grafikler":
         
         conn = get_db_connection()
         
-        # Oda bazında toplam hasat ve satış
+        # Oda bazında toplam hasat ve satış (correlated subquery — çoklu JOIN şişirmesini önler)
         df_oda_perf = _read_sql("""
-            SELECT 
+            SELECT
                 o.oda_adi,
-                COALESCE(SUM(gh.hasat_kg), 0) as toplam_hasat,
-                COALESCE(SUM(s.satis_kg), 0) as toplam_satis,
-                COALESCE(SUM(s.toplam_tutar), 0) as toplam_gelir,
-                COALESCE(SUM(og.tutar), 0) as toplam_gider
+                COALESCE((SELECT SUM(gh.hasat_kg)    FROM gunluk_hasat   gh WHERE gh.oda_id = o.id), 0) as toplam_hasat,
+                COALESCE((SELECT SUM(s.satis_kg)     FROM satislar        s WHERE s.oda_id  = o.id), 0) as toplam_satis,
+                COALESCE((SELECT SUM(s.toplam_tutar) FROM satislar        s WHERE s.oda_id  = o.id), 0) as toplam_gelir,
+                COALESCE((SELECT SUM(og.tutar)       FROM oda_giderleri  og WHERE og.oda_id = o.id), 0) as toplam_gider
             FROM odalar o
-            LEFT JOIN gunluk_hasat gh ON o.id = gh.oda_id
-            LEFT JOIN satislar s ON o.id = s.oda_id
-            LEFT JOIN oda_giderleri og ON o.id = og.oda_id
-            GROUP BY o.oda_adi
+            ORDER BY o.oda_adi
         """, conn)
         conn.close()
         
@@ -1974,11 +1971,11 @@ elif menu == "💼 Gelir-Gider Analizi":
     conn.close()
     
     # Özet kartlar
-    toplam_gelir = df_gelir['toplam_gelir'].values[0]
-    toplam_nakliye = df_gelir['toplam_nakliye'].values[0]
-    toplam_gider = df_gider['toplam_gider'].values[0]
+    toplam_gelir  = float(df_gelir['toplam_gelir'].values[0]  or 0)
+    toplam_nakliye = float(df_gelir['toplam_nakliye'].values[0] or 0)
+    toplam_gider  = float(df_gider['toplam_gider'].values[0]   or 0)
     net_gelir = toplam_gelir - toplam_nakliye
-    net_kar = net_gelir - toplam_gider
+    net_kar   = net_gelir - toplam_gider
     kar_marji = (net_kar / net_gelir * 100) if net_gelir > 0 else 0
     
     st.markdown("### 📊 Finansal Özet")
