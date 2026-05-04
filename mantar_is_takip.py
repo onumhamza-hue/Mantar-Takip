@@ -139,7 +139,12 @@ def get_db_connection():
     """Veritabanı bağlantısı al (SQLite yerel / PostgreSQL bulut)"""
     if IS_CLOUD:
         return _PGConnection(_psycopg2.connect(_DB_URL))
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")      # Çok daha hızlı yazma
+    conn.execute("PRAGMA synchronous=NORMAL")    # Güvenli ama hızlı
+    conn.execute("PRAGMA cache_size=-8000")      # 8 MB bellek cache
+    conn.execute("PRAGMA temp_store=MEMORY")     # Geçici tablolar bellekte
+    return conn
 
 
 def _read_sql(sql, conn, params=None):
@@ -173,7 +178,48 @@ def _read_sql(sql, conn, params=None):
             cur.close()
     return pd.read_sql(sql, conn, params=params)
 
-# ───────────────────────────────────────────────────────────────────────────────
+# ── Performans: Cache'lenmiş lookup verileri ─────────────────────────────────
+@st.cache_data(ttl=60)
+def _cached_odalar():
+    conn = get_db_connection()
+    df = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
+    conn.close()
+    return df
+
+@st.cache_data(ttl=60)
+def _cached_odalar_aktif():
+    conn = get_db_connection()
+    df = _read_sql("SELECT id, oda_adi FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
+    conn.close()
+    return df
+
+@st.cache_data(ttl=60)
+def _cached_gider_kalemleri():
+    conn = get_db_connection()
+    df = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
+    conn.close()
+    return df
+
+@st.cache_data(ttl=60)
+def _cached_cariler():
+    conn = get_db_connection()
+    df = _read_sql("SELECT id, cari_adi FROM cariler WHERE aktif=1 ORDER BY cari_adi", conn)
+    conn.close()
+    return df
+
+def _cache_temizle():
+    """Veri değişikliğinde lookup cache'lerini sıfırla."""
+    _cached_odalar.clear()
+    _cached_odalar_aktif.clear()
+    _cached_gider_kalemleri.clear()
+    _cached_cariler.clear()
+
+def _rerun():
+    """Cache temizleyerek yeniden çalıştır — her _rerun() yerine kullan."""
+    _cache_temizle()
+    _rerun()
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 def init_database():
     """Veritabanını başlat"""
@@ -384,10 +430,17 @@ def init_database():
         conn.commit()
     conn.close()
 
-# Veritabanını başlat
-try:
-    init_database()
-except Exception as _init_err:
+# Veritabanını başlat — @st.cache_resource ile sadece BİR KEZ çalışır
+@st.cache_resource
+def _init_db_once():
+    try:
+        init_database()
+        return None
+    except Exception as e:
+        return str(e)
+
+_init_err = _init_db_once()
+if _init_err:
     st.error(f"❌ Veritabanı başlatma hatası: {_init_err}")
     st.stop()
 
@@ -482,7 +535,7 @@ elif menu == "💰 Gider Kalemleri":
                 conn.commit()
                 conn.close()
                 st.success("✅ Değişiklikler kaydedildi!")
-                st.rerun()
+                _rerun()
         else:
             st.info("Henüz gider kalemi bulunmuyor.")
     
@@ -506,7 +559,7 @@ elif menu == "💰 Gider Kalemleri":
                 conn.commit()
                 conn.close()
                 st.success("✅ Yeni gider kalemi eklendi!")
-                st.rerun()
+                _rerun()
             else:
                 st.error("❌ Lütfen tüm zorunlu alanları doldurun!")
 
@@ -549,7 +602,7 @@ elif menu == "🏢 Oda Yönetimi":
                 conn.commit()
                 conn.close()
                 st.success("✅ Değişiklikler kaydedildi!")
-                st.rerun()
+                _rerun()
         else:
             st.info("Henüz oda bulunmuyor.")
     
@@ -576,7 +629,7 @@ elif menu == "🏢 Oda Yönetimi":
                             (oda_adi, alan_m2, kapasite_kg, durum, aciklama))
                     conn.commit()
                     st.success("✅ Yeni oda eklendi!")
-                    st.rerun()
+                    _rerun()
                 except sqlite3.IntegrityError:
                     st.error("❌ Bu isimde bir oda zaten mevcut!")
                 finally:
@@ -616,7 +669,7 @@ elif menu == "🏢 Oda Yönetimi":
                 conn.commit()
                 conn.close()
                 st.success("✅ Gider kaydedildi!")
-                st.rerun()
+                _rerun()
             
             # Mevcut giderleri göster
             st.markdown("---")
@@ -659,7 +712,7 @@ elif menu == "🏢 Oda Yönetimi":
                     conn.commit()
                     conn.close()
                     st.success("✅ Değişiklikler kaydedildi!")
-                    st.rerun()
+                    _rerun()
         else:
             st.warning("⚠️ Önce oda ve gider kalemleri eklemelisiniz!")
 
@@ -670,9 +723,7 @@ elif menu == "📊 Günlük Hasat":
     tab1, tab2 = st.tabs(["➕ Hasat Gir", "📋 Hasat Kayıtları"])
     
     with tab1:
-        conn = get_db_connection()
-        df_odalar = _read_sql("SELECT id, oda_adi FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
-        conn.close()
+        df_odalar = _cached_odalar_aktif()
         
         if not df_odalar.empty:
             st.subheader("➕ Yeni Hasat Kaydı")
@@ -699,7 +750,7 @@ elif menu == "📊 Günlük Hasat":
                     conn.commit()
                     conn.close()
                     st.success("✅ Hasat kaydedildi!")
-                    st.rerun()
+                    _rerun()
                 else:
                     st.error("❌ Hasat miktarı 0'dan büyük olmalıdır!")
         else:
@@ -768,7 +819,7 @@ elif menu == "📊 Günlük Hasat":
                 conn.commit()
                 conn.close()
                 st.success("✅ Değişiklikler kaydedildi!")
-                st.rerun()
+                _rerun()
             
             # Özet istatistikler
             st.markdown("---")
@@ -789,9 +840,7 @@ elif menu == "🌡️ İklim Verileri":
     tab1, tab2, tab3 = st.tabs(["➕ Veri Gir", "📊 İklim Grafikleri", "📋 Kayıtlar ve Düzenle"])
     
     with tab1:
-        conn = get_db_connection()
-        df_odalar = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
-        conn.close()
+        df_odalar = _cached_odalar()
         
         if not df_odalar.empty:
             st.subheader("➕ Yeni İklim Verisi")
@@ -819,7 +868,7 @@ elif menu == "🌡️ İklim Verileri":
                 conn.commit()
                 conn.close()
                 st.success("✅ İklim verisi kaydedildi!")
-                st.rerun()
+                _rerun()
         else:
             st.warning("⚠️ Önce oda eklemelisiniz!")
     
@@ -965,7 +1014,7 @@ elif menu == "🌡️ İklim Verileri":
                     conn.commit()
                     conn.close()
                     st.success("✅ Değişiklikler kaydedildi!")
-                    st.rerun()
+                    _rerun()
             else:
                 st.info("Seçilen kriterlere uygun kayıt bulunamadı.")
         else:
@@ -1095,7 +1144,7 @@ elif menu == "💵 Satış İşlemleri":
                                 conn.commit()
                                 conn.close()
                                 st.success("✅ Satış kaydedildi!")
-                                st.rerun()
+                                _rerun()
                             else:
                                 st.error("❌ Satış miktarı ve birim fiyat girilmelidir!")
 
@@ -1126,7 +1175,7 @@ elif menu == "💵 Satış İşlemleri":
                             conn.commit()
                             conn.close()
                             st.success(f"✅ Alış kaydedildi! ({alis_kalem}: {alis_miktar:g} × {alis_birim_fiyat:,.2f} = {alis_toplam:,.2f} TL)")
-                            st.rerun()
+                            _rerun()
                         else:
                             st.error("❌ Ürün adı, miktar ve birim fiyat girilmelidir!")
 
@@ -1241,7 +1290,7 @@ elif menu == "💵 Satış İşlemleri":
                     conn.commit()
                     conn.close()
                     st.success("✅ Kayıt eklendi!")
-                    st.rerun()
+                    _rerun()
                 else:
                     st.error("❌ Tutar girilmelidir!")
 
@@ -1300,7 +1349,7 @@ elif menu == "💵 Satış İşlemleri":
                         conn.commit()
                         conn.close()
                         st.success("✅ Değişiklikler kaydedildi!")
-                        st.rerun()
+                        _rerun()
                 else:
                     st.info("Bu cariye ait satış kaydı yok.")
 
@@ -1339,7 +1388,7 @@ elif menu == "💵 Satış İşlemleri":
                         conn.commit()
                         conn.close()
                         st.success("✅ Değişiklikler kaydedildi!")
-                        st.rerun()
+                        _rerun()
                 else:
                     st.info("Bu cariye ait alış/tahsilat/ödeme kaydı yok.")
 
@@ -1381,7 +1430,7 @@ elif menu == "💵 Satış İşlemleri":
                     conn.commit()
                     conn.close()
                     st.success("✅ Değişiklikler kaydedildi!")
-                    st.rerun()
+                    _rerun()
             else:
                 st.info("Henüz cari kaydı yok.")
 
@@ -1404,7 +1453,7 @@ elif menu == "💵 Satış İşlemleri":
                     conn.commit()
                     conn.close()
                     st.success(f"✅ '{yeni_c_adi}' carisi eklendi!")
-                    st.rerun()
+                    _rerun()
                 else:
                     st.error("❌ Cari adı zorunludur!")
 
@@ -1601,7 +1650,7 @@ elif menu == "👷 İşçi Puantaj":
                 conn.commit()
                 conn.close()
                 st.success("✅ Değişiklikler kaydedildi!")
-                st.rerun()
+                _rerun()
         else:
             st.info("Henüz işçi kaydı bulunmuyor.")
     
@@ -1629,7 +1678,7 @@ elif menu == "👷 İşçi Puantaj":
                 conn.commit()
                 conn.close()
                 st.success("✅ Yeni işçi eklendi!")
-                st.rerun()
+                _rerun()
             else:
                 st.error("❌ Ad Soyad zorunludur!")
     
@@ -1682,7 +1731,7 @@ elif menu == "👷 İşçi Puantaj":
                     conn.commit()
                     conn.close()
                     st.success("✅ Puantaj kaydedildi!")
-                    st.rerun()
+                    _rerun()
                 else:
                     st.error("❌ Çalışma saati 0'dan büyük olmalıdır!")
             
@@ -1734,7 +1783,7 @@ elif menu == "👷 İşçi Puantaj":
                     conn.commit()
                     conn.close()
                     st.success("✅ Değişiklikler kaydedildi!")
-                    st.rerun()
+                    _rerun()
         else:
             st.warning("⚠️ Önce işçi eklemelisiniz!")
     
@@ -1996,9 +2045,7 @@ elif menu == "📋 Oda Bilgi Kartı":
     st.title("📋 Oda Bilgi Kartı")
     st.markdown("Seçili odaya ait tüm veriler: temel bilgiler, üretim takvimi, giderler, hasat, satış ve iklim.")
 
-    conn = get_db_connection()
-    df_odalar_kart = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
-    conn.close()
+    df_odalar_kart = _cached_odalar()
 
     if df_odalar_kart.empty:
         st.warning("⚠️ Henüz oda eklenmemiş. Oda Yönetimi menüsünden ekleyin.")
@@ -2195,9 +2242,7 @@ elif menu == "🌱 Üretim Takvimi":
 
     # ── TAB 1: Tarih Girişi ──────────────────────────────────────────────────
     with tab1:
-        conn = get_db_connection()
-        df_odalar_ut = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
-        conn.close()
+        df_odalar_ut = _cached_odalar()
 
         if df_odalar_ut.empty:
             st.warning("⚠️ Önce oda eklemelisiniz! (Oda Yönetimi menüsünden)")
@@ -2285,7 +2330,7 @@ elif menu == "🌱 Üretim Takvimi":
                 conn.commit()
                 conn.close()
                 st.success("✅ Kaydedildi!")
-                st.rerun()
+                _rerun()
 
     # ── TAB 2: Oda Takip Paneli ───────────────────────────────────────────────
     with tab2:
@@ -2479,7 +2524,7 @@ elif menu == "🌱 Üretim Takvimi":
                             conn.commit()
                             conn.close()
                             st.success("✅ Kaydedildi!")
-                            st.rerun()
+                            _rerun()
 
     # ── TAB 3: Gantt Takvim ───────────────────────────────────────────────────
     with tab3:
