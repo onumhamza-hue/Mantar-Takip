@@ -1935,12 +1935,22 @@ elif menu == "👷 İşçi Puantaj":
 elif menu == "💼 Gelir-Gider Analizi":
     st.title("💼 Gelir-Gider Analizi")
     
-    # Tarih aralığı seçimi
-    col1, col2 = st.columns(2)
+    # Tarih aralığı ve oda filtresi
+    col1, col2, col3 = st.columns(3)
     with col1:
-        baslangic = st.date_input("Başlangıç Tarihi", value=date.today() - timedelta(days=30), key="analiz_baslangic")
+        baslangic = st.date_input("Başlangıç Tarihi", value=date(date.today().year, 1, 1), key="analiz_baslangic")
     with col2:
         bitis = st.date_input("Bitiş Tarihi", value=date.today(), key="analiz_bitis")
+    with col3:
+        _gg_odalar = _cached_odalar()
+        _gg_oda_sec = st.selectbox("Oda Filtresi", ["Tümü"] + _gg_odalar['oda_adi'].tolist(), key="analiz_oda")
+    
+    _gg_oda_where_gider = ""
+    _gg_oda_where_gelir = ""
+    if _gg_oda_sec != "Tümü":
+        _gg_oda_id = int(_gg_odalar[_gg_odalar['oda_adi'] == _gg_oda_sec]['id'].values[0])
+        _gg_oda_where_gider = f"AND oda_id = {_gg_oda_id}"
+        _gg_oda_where_gelir = f"AND oda_id = {_gg_oda_id}"
     
     conn = get_db_connection()
     
@@ -1950,6 +1960,7 @@ elif menu == "💼 Gelir-Gider Analizi":
                COALESCE(SUM(nakliye_ucreti), 0) as toplam_nakliye
         FROM satislar
         WHERE tarih BETWEEN '{baslangic}' AND '{bitis}'
+        {_gg_oda_where_gelir}
     """, conn)
     
     # Toplam gider
@@ -1957,6 +1968,7 @@ elif menu == "💼 Gelir-Gider Analizi":
         SELECT COALESCE(SUM(tutar), 0) as toplam_gider
         FROM oda_giderleri
         WHERE tarih BETWEEN '{baslangic}' AND '{bitis}'
+        {_gg_oda_where_gider}
     """, conn)
     
     # Gider kategorileri
@@ -1964,6 +1976,7 @@ elif menu == "💼 Gelir-Gider Analizi":
         SELECT gider_kalemi, SUM(tutar) as toplam
         FROM oda_giderleri
         WHERE tarih BETWEEN '{baslangic}' AND '{bitis}'
+        {_gg_oda_where_gider}
         GROUP BY gider_kalemi
         ORDER BY toplam DESC
     """, conn)
