@@ -2326,18 +2326,9 @@ elif menu == "🌱 Üretim Takvimi":
                 ("oda_bosaltma_tarihi", "🚪 Oda Boşaltma Yapıldı",  "Oda Boşaltma Tarihi",  5, None, None),
             ]
 
-            tarih_vals = {}
+            # ── Önce tüm tahmini tarihleri zincir hesapla ───────────────────
+            # Mevcut kayıt varsa oradan, yoksa henüz girilmemiş
             _bugun = date.today()
-            for alan, chk_lbl, dt_lbl, gun_once, gun_sonra, sonraki_lbl in EVRE_HINTS:
-                mev_t = _parse_ut_date(mevcut_kay[alan]) if mevcut_kay is not None else None
-                yapildi = st.checkbox(chk_lbl, value=mev_t is not None, key=f"utck_{alan}")
-                if yapildi:
-                    tarih_vals[alan] = st.date_input(dt_lbl, value=mev_t or _bugun, key=f"utdt_{alan}")
-                else:
-                    tarih_vals[alan] = None
-                st.markdown("")
-
-            # ── Tüm Aşamaların Tahmini Takvimi ──────────────────────────────
             _TH_STAGES = [
                 ("ekim_tarihi",         "🌱 Ekim",          None),
                 ("baski_tarihi",        "⚙️ Baskı",           10),
@@ -2349,49 +2340,56 @@ elif menu == "🌱 Üretim Takvimi":
                 ("oda_bosaltma_tarihi", "🚪 Oda Boşaltma",     5),
             ]
 
-            if tarih_vals.get("ekim_tarihi"):
-                st.markdown("---")
-                st.markdown("#### 📅 Tahmini Üretim Takvimi")
-
-                # Önce tüm tarihleri hesapla (gerçek veya tahmini)
-                _th_prev = None
-                _th_dates = {}
-                for _a, _lbl, _gun_once in _TH_STAGES:
-                    _gercek = tarih_vals.get(_a)
-                    if _gercek:
-                        _th_dates[_a] = (_gercek, True)
-                        _th_prev = _gercek
-                    elif _th_prev is not None and _gun_once is not None:
-                        _th = _th_prev + timedelta(days=_gun_once)
-                        _th_dates[_a] = (_th, False)
-                        _th_prev = _th
+            def _hesapla_tahminler(vals):
+                """vals: {alan: date|None} -> {alan: (date, is_gercek)}"""
+                result = {}
+                prev = None
+                for _a, _lbl, _gun in _TH_STAGES:
+                    gercek = vals.get(_a)
+                    if gercek:
+                        result[_a] = (gercek, True)
+                        prev = gercek
+                    elif prev is not None and _gun is not None:
+                        th = prev + timedelta(days=_gun)
+                        result[_a] = (th, False)
+                        prev = th
                     else:
-                        _th_dates[_a] = (None, False)
+                        result[_a] = (None, False)
+                return result
 
-                # 2 satır × 4 sütun görünümü
-                _row1_cols = st.columns(4)
-                _row2_cols = st.columns(4)
-                _all_cols  = _row1_cols + _row2_cols
-                for _i, (_a, _lbl, _gun_once) in enumerate(_TH_STAGES):
-                    _th, _is_gercek = _th_dates[_a]
-                    with _all_cols[_i]:
-                        st.markdown(f"**{_lbl}**")
-                        if _th:
-                            st.markdown(f"📅 `{_th.strftime('%d.%m.%Y')}`")
-                            if _is_gercek:
-                                st.success("✅ Yapıldı")
-                            else:
-                                _kalan = (_th - _bugun).days
-                                if _kalan < 0:
-                                    st.error(f"🔴 {abs(_kalan)} gün geçti")
-                                elif _kalan == 0:
-                                    st.warning("🟡 Bugün!")
-                                elif _kalan <= 3:
-                                    st.warning(f"🟡 {_kalan} gün")
-                                else:
-                                    st.info(f"🟢 {_kalan} gün")
-                        else:
-                            st.markdown("—")
+            def _tahmini_caption(th, is_gercek):
+                if th is None:
+                    return
+                if is_gercek:
+                    st.caption(f"✅ Gerçekleşti: **{th.strftime('%d.%m.%Y')}**")
+                else:
+                    kalan = (th - _bugun).days
+                    if kalan < 0:
+                        st.caption(f"📅 Tahmini: **{th.strftime('%d.%m.%Y')}** 🔴 {abs(kalan)} gün geçti")
+                    elif kalan == 0:
+                        st.caption(f"📅 Tahmini: **{th.strftime('%d.%m.%Y')}** 🟡 Bugün!")
+                    elif kalan <= 3:
+                        st.caption(f"📅 Tahmini: **{th.strftime('%d.%m.%Y')}** 🟡 {kalan} gün kaldı")
+                    else:
+                        st.caption(f"📅 Tahmini: **{th.strftime('%d.%m.%Y')}** 🟢 {kalan} gün kaldı")
+
+            # Mevcut kaydın tarihlerini başlangıç değeri olarak hesapla
+            _mevcut_vals = {a: (_parse_ut_date(mevcut_kay[a]) if mevcut_kay is not None else None)
+                            for a, *_ in _TH_STAGES}
+
+            tarih_vals = {}
+            for alan, chk_lbl, dt_lbl, gun_once, gun_sonra, sonraki_lbl in EVRE_HINTS:
+                mev_t = _parse_ut_date(mevcut_kay[alan]) if mevcut_kay is not None else None
+                yapildi = st.checkbox(chk_lbl, value=mev_t is not None, key=f"utck_{alan}")
+                if yapildi:
+                    tarih_vals[alan] = st.date_input(dt_lbl, value=mev_t or _bugun, key=f"utdt_{alan}")
+                else:
+                    tarih_vals[alan] = None
+                # Her aşamanın altına tahmini tarihi inline göster
+                _anlık_vals = {**_mevcut_vals, **tarih_vals}
+                _anlık_tahminler = _hesapla_tahminler(_anlık_vals)
+                _th_bu, _ig_bu = _anlık_tahminler.get(alan, (None, False))
+                _tahmini_caption(_th_bu, _ig_bu)
                 st.markdown("")
 
             aciklama_ut = st.text_area(
