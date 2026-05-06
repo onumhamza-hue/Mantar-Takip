@@ -2314,27 +2314,44 @@ elif menu == "🌱 Üretim Takvimi":
             st.markdown("---")
             st.markdown("**Yapılan işlemleri işaretleyin ve tarihini girin:**")
 
+            # (alan, chk_lbl, dt_lbl, gün_önceki_aşamadan, gün_sonraki_aşamaya, sonraki_lbl)
             EVRE_HINTS = [
-                ("ekim_tarihi",         "🌱 Ekim Yapıldı",         "Ekim Tarihi",         "10 gün sonra → Baskı tahmini"),
-                ("baski_tarihi",        "⚙️ Baskı Yapıldı",         "Baskı Tarihi",         "1 gün sonra → Toprak Serim tahmini"),
-                ("toprak_serim_tarihi", "🌍 Toprak Serim Yapıldı",  "Toprak Serim Tarihi", "9 gün sonra → Tırmık tahmini"),
-                ("tirmik_tarihi",       "🔧 Tırmık Yapıldı",        "Tırmık Tarihi",       "3 gün sonra → Hava Verme tahmini"),
-                ("hava_verme_tarihi",   "💨 Hava Verme Yapıldı",    "Hava Verme Tarihi",   "11 gün sonra → 1. Flaş tahmini"),
-                ("flash1_tarihi",       "🍄 1. Flaş Başladı",       "1. Flaş Tarihi",      "14 gün sonra → 2. Flaş tahmini"),
-                ("flash2_tarihi",       "🍄 2. Flaş Başladı",       "2. Flaş Tarihi",      "5 gün sonra → Oda Boşaltma tahmini"),
-                ("oda_bosaltma_tarihi", "🚪 Oda Boşaltma Yapıldı",  "Oda Boşaltma Tarihi", ""),
+                ("ekim_tarihi",         "🌱 Ekim Yapıldı",         "Ekim Tarihi",        None, 10, "⚙️ Baskı"),
+                ("baski_tarihi",        "⚙️ Baskı Yapıldı",         "Baskı Tarihi",        10,   1, "🌍 Toprak Serim"),
+                ("toprak_serim_tarihi", "🌍 Toprak Serim Yapıldı",  "Toprak Serim Tarihi",  1,   9, "🔧 Tırmık"),
+                ("tirmik_tarihi",       "🔧 Tırmık Yapıldı",        "Tırmık Tarihi",        9,   3, "💨 Hava Verme"),
+                ("hava_verme_tarihi",   "💨 Hava Verme Yapıldı",    "Hava Verme Tarihi",    3,  11, "🍄 1. Flaş"),
+                ("flash1_tarihi",       "🍄 1. Flaş Başladı",       "1. Flaş Tarihi",      11,  14, "🍄 2. Flaş"),
+                ("flash2_tarihi",       "🍄 2. Flaş Başladı",       "2. Flaş Tarihi",      14,   5, "🚪 Oda Boşaltma"),
+                ("oda_bosaltma_tarihi", "🚪 Oda Boşaltma Yapıldı",  "Oda Boşaltma Tarihi",  5, None, None),
             ]
 
             tarih_vals = {}
-            for alan, chk_lbl, dt_lbl, hint in EVRE_HINTS:
+            _tahmini_baz = None   # son bilinen/hesaplanan tarih (tahmini zinciri için)
+            _bugun = date.today()
+            for alan, chk_lbl, dt_lbl, gun_once, gun_sonra, sonraki_lbl in EVRE_HINTS:
                 mev_t = _parse_ut_date(mevcut_kay[alan]) if mevcut_kay is not None else None
                 yapildi = st.checkbox(chk_lbl, value=mev_t is not None, key=f"utck_{alan}")
                 if yapildi:
-                    tarih_vals[alan] = st.date_input(dt_lbl, value=mev_t or date.today(), key=f"utdt_{alan}")
-                    if hint:
-                        st.caption(f"ℹ️ {hint}")
+                    tarih_vals[alan] = st.date_input(dt_lbl, value=mev_t or _bugun, key=f"utdt_{alan}")
+                    _tahmini_baz = tarih_vals[alan]
+                    if gun_sonra and sonraki_lbl:
+                        _th = _tahmini_baz + timedelta(days=gun_sonra)
+                        st.caption(f"ℹ️ {gun_sonra} gün sonra → {sonraki_lbl} tahmini: **{_th.strftime('%d.%m.%Y')}**")
                 else:
                     tarih_vals[alan] = None
+                    if _tahmini_baz is not None and gun_once is not None:
+                        _th = _tahmini_baz + timedelta(days=gun_once)
+                        _kalan = (_th - _bugun).days
+                        if _kalan < 0:
+                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🔴 {abs(_kalan)} gün geçti")
+                        elif _kalan == 0:
+                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🟡 Bugün!")
+                        elif _kalan <= 3:
+                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🟡 {_kalan} gün kaldı")
+                        else:
+                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🟢 {_kalan} gün kaldı")
+                        _tahmini_baz = _th   # zinciri devam ettir
                 st.markdown("")
 
             aciklama_ut = st.text_area(
