@@ -2327,31 +2327,71 @@ elif menu == "🌱 Üretim Takvimi":
             ]
 
             tarih_vals = {}
-            _tahmini_baz = None   # son bilinen/hesaplanan tarih (tahmini zinciri için)
             _bugun = date.today()
             for alan, chk_lbl, dt_lbl, gun_once, gun_sonra, sonraki_lbl in EVRE_HINTS:
                 mev_t = _parse_ut_date(mevcut_kay[alan]) if mevcut_kay is not None else None
                 yapildi = st.checkbox(chk_lbl, value=mev_t is not None, key=f"utck_{alan}")
                 if yapildi:
                     tarih_vals[alan] = st.date_input(dt_lbl, value=mev_t or _bugun, key=f"utdt_{alan}")
-                    _tahmini_baz = tarih_vals[alan]
-                    if gun_sonra and sonraki_lbl:
-                        _th = _tahmini_baz + timedelta(days=gun_sonra)
-                        st.caption(f"ℹ️ {gun_sonra} gün sonra → {sonraki_lbl} tahmini: **{_th.strftime('%d.%m.%Y')}**")
                 else:
                     tarih_vals[alan] = None
-                    if _tahmini_baz is not None and gun_once is not None:
-                        _th = _tahmini_baz + timedelta(days=gun_once)
-                        _kalan = (_th - _bugun).days
-                        if _kalan < 0:
-                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🔴 {abs(_kalan)} gün geçti")
-                        elif _kalan == 0:
-                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🟡 Bugün!")
-                        elif _kalan <= 3:
-                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🟡 {_kalan} gün kaldı")
+                st.markdown("")
+
+            # ── Tüm Aşamaların Tahmini Takvimi ──────────────────────────────
+            _TH_STAGES = [
+                ("ekim_tarihi",         "🌱 Ekim",          None),
+                ("baski_tarihi",        "⚙️ Baskı",           10),
+                ("toprak_serim_tarihi", "🌍 Toprak Serim",     1),
+                ("tirmik_tarihi",       "🔧 Tırmık",           9),
+                ("hava_verme_tarihi",   "💨 Hava Verme",       3),
+                ("flash1_tarihi",       "🍄 1. Flaş",         11),
+                ("flash2_tarihi",       "🍄 2. Flaş",         14),
+                ("oda_bosaltma_tarihi", "🚪 Oda Boşaltma",     5),
+            ]
+
+            if tarih_vals.get("ekim_tarihi"):
+                st.markdown("---")
+                st.markdown("#### 📅 Tahmini Üretim Takvimi")
+
+                # Önce tüm tarihleri hesapla (gerçek veya tahmini)
+                _th_prev = None
+                _th_dates = {}
+                for _a, _lbl, _gun_once in _TH_STAGES:
+                    _gercek = tarih_vals.get(_a)
+                    if _gercek:
+                        _th_dates[_a] = (_gercek, True)
+                        _th_prev = _gercek
+                    elif _th_prev is not None and _gun_once is not None:
+                        _th = _th_prev + timedelta(days=_gun_once)
+                        _th_dates[_a] = (_th, False)
+                        _th_prev = _th
+                    else:
+                        _th_dates[_a] = (None, False)
+
+                # 2 satır × 4 sütun görünümü
+                _row1_cols = st.columns(4)
+                _row2_cols = st.columns(4)
+                _all_cols  = _row1_cols + _row2_cols
+                for _i, (_a, _lbl, _gun_once) in enumerate(_TH_STAGES):
+                    _th, _is_gercek = _th_dates[_a]
+                    with _all_cols[_i]:
+                        st.markdown(f"**{_lbl}**")
+                        if _th:
+                            st.markdown(f"📅 `{_th.strftime('%d.%m.%Y')}`")
+                            if _is_gercek:
+                                st.success("✅ Yapıldı")
+                            else:
+                                _kalan = (_th - _bugun).days
+                                if _kalan < 0:
+                                    st.error(f"🔴 {abs(_kalan)} gün geçti")
+                                elif _kalan == 0:
+                                    st.warning("🟡 Bugün!")
+                                elif _kalan <= 3:
+                                    st.warning(f"🟡 {_kalan} gün")
+                                else:
+                                    st.info(f"🟢 {_kalan} gün")
                         else:
-                            st.caption(f"📅 Tahmini: **{_th.strftime('%d.%m.%Y')}** 🟢 {_kalan} gün kaldı")
-                        _tahmini_baz = _th   # zinciri devam ettir
+                            st.markdown("—")
                 st.markdown("")
 
             aciklama_ut = st.text_area(
