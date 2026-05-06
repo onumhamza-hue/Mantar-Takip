@@ -338,6 +338,8 @@ def init_database():
                   tirmik_tarihi DATE,
                   hava_verme_tarihi DATE,
                   flash1_tarihi DATE,
+                  flash2_tarihi DATE,
+                  oda_bosaltma_tarihi DATE,
                   aciklama TEXT,
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
@@ -389,6 +391,16 @@ def init_database():
         pass
     try:
         c.execute("ALTER TABLE cari_hareketler ADD COLUMN birim_fiyat REAL")
+    except Exception:
+        pass
+
+    # Migration: oda_uretim_takip tablosuna 2. Flaş ve Oda Boşaltma sütunları ekle
+    try:
+        c.execute("ALTER TABLE oda_uretim_takip ADD COLUMN flash2_tarihi DATE")
+    except Exception:
+        pass
+    try:
+        c.execute("ALTER TABLE oda_uretim_takip ADD COLUMN oda_bosaltma_tarihi DATE")
     except Exception:
         pass
 
@@ -2078,7 +2090,8 @@ elif menu == "📋 Oda Bilgi Kartı":
         df_kart_temel  = _read_sql(f"SELECT * FROM odalar WHERE id={kart_oda_id}", conn)
         df_kart_uretim = _read_sql(f"""
             SELECT donem_no, ekim_tarihi, baski_tarihi, toprak_serim_tarihi,
-                   tirmik_tarihi, hava_verme_tarihi, flash1_tarihi, aciklama
+                   tirmik_tarihi, hava_verme_tarihi, flash1_tarihi,
+                   flash2_tarihi, oda_bosaltma_tarihi, aciklama
             FROM oda_uretim_takip WHERE oda_id={kart_oda_id} ORDER BY donem_no
         """, conn)
         df_kart_gider  = _read_sql(f"""
@@ -2137,6 +2150,8 @@ elif menu == "📋 Oda Bilgi Kartı":
                     'tirmik_tarihi': '🔧 Tırmık',
                     'hava_verme_tarihi': '💨 Hava Verme',
                     'flash1_tarihi': '🍄 1. Flaş',
+                    'flash2_tarihi': '🍄 2. Flaş',
+                    'oda_bosaltma_tarihi': '🚪 Oda Boşaltma',
                     'aciklama': 'Not',
                 }),
                 use_container_width=True,
@@ -2256,7 +2271,9 @@ elif menu == "🌱 Üretim Takvimi":
         ("toprak_serim_tarihi","🌍 Toprak Serim",        9, "🔧 Tırmık"),
         ("tirmik_tarihi",      "🔧 Tırmık",             3, "💨 Hava Verme"),
         ("hava_verme_tarihi",  "💨 Hava Verme",         11, "🍄 1. Flaş"),
-        ("flash1_tarihi",      "🍄 1. Flaş",         None, None),
+        ("flash1_tarihi",      "🍄 1. Flaş",            14, "🍄 2. Flaş"),
+        ("flash2_tarihi",      "🍄 2. Flaş",             5, "🚪 Oda Boşaltma"),
+        ("oda_bosaltma_tarihi","🚪 Oda Boşaltma",      None, None),
     ]
 
     tab1, tab2, tab3 = st.tabs(["📅 Tarih Girişi", "📋 Oda Takip Paneli", "📊 Gantt Takvim"])
@@ -2303,7 +2320,9 @@ elif menu == "🌱 Üretim Takvimi":
                 ("toprak_serim_tarihi", "🌍 Toprak Serim Yapıldı",  "Toprak Serim Tarihi", "9 gün sonra → Tırmık tahmini"),
                 ("tirmik_tarihi",       "🔧 Tırmık Yapıldı",        "Tırmık Tarihi",       "3 gün sonra → Hava Verme tahmini"),
                 ("hava_verme_tarihi",   "💨 Hava Verme Yapıldı",    "Hava Verme Tarihi",   "11 gün sonra → 1. Flaş tahmini"),
-                ("flash1_tarihi",       "🍄 1. Flaş Başladı",       "1. Flaş Tarihi",      ""),
+                ("flash1_tarihi",       "🍄 1. Flaş Başladı",       "1. Flaş Tarihi",      "14 gün sonra → 2. Flaş tahmini"),
+                ("flash2_tarihi",       "🍄 2. Flaş Başladı",       "2. Flaş Tarihi",      "5 gün sonra → Oda Boşaltma tahmini"),
+                ("oda_bosaltma_tarihi", "🚪 Oda Boşaltma Yapıldı",  "Oda Boşaltma Tarihi", ""),
             ]
 
             tarih_vals = {}
@@ -2328,7 +2347,8 @@ elif menu == "🌱 Üretim Takvimi":
                 p = tuple(
                     str(tarih_vals[a]) if tarih_vals[a] else None
                     for a in ["ekim_tarihi", "baski_tarihi", "toprak_serim_tarihi",
-                               "tirmik_tarihi", "hava_verme_tarihi", "flash1_tarihi"]
+                               "tirmik_tarihi", "hava_verme_tarihi", "flash1_tarihi",
+                               "flash2_tarihi", "oda_bosaltma_tarihi"]
                 ) + (aciklama_ut,)
                 conn = get_db_connection()
                 c = conn.cursor()
@@ -2336,15 +2356,17 @@ elif menu == "🌱 Üretim Takvimi":
                     c.execute(
                         """INSERT INTO oda_uretim_takip
                            (oda_id, donem_no, ekim_tarihi, baski_tarihi, toprak_serim_tarihi,
-                            tirmik_tarihi, hava_verme_tarihi, flash1_tarihi, aciklama)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            tirmik_tarihi, hava_verme_tarihi, flash1_tarihi,
+                            flash2_tarihi, oda_bosaltma_tarihi, aciklama)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (ut_oda_id, yeni_donem_no) + p
                     )
                 else:
                     c.execute(
                         """UPDATE oda_uretim_takip SET
                            ekim_tarihi=?, baski_tarihi=?, toprak_serim_tarihi=?,
-                           tirmik_tarihi=?, hava_verme_tarihi=?, flash1_tarihi=?, aciklama=?
+                           tirmik_tarihi=?, hava_verme_tarihi=?, flash1_tarihi=?,
+                           flash2_tarihi=?, oda_bosaltma_tarihi=?, aciklama=?
                            WHERE oda_id=? AND donem_no=?""",
                         p + (ut_oda_id, yeni_donem_no)
                     )
@@ -2373,17 +2395,25 @@ elif menu == "🌱 Üretim Takvimi":
                 oda_adi_r = row['oda_adi']
                 donem_r   = int(row['donem_no'])
 
-                ekim_d   = _parse_ut_date(row['ekim_tarihi'])
-                baski_d  = _parse_ut_date(row['baski_tarihi'])
-                toprak_d = _parse_ut_date(row['toprak_serim_tarihi'])
-                tirmik_d = _parse_ut_date(row['tirmik_tarihi'])
-                hava_d   = _parse_ut_date(row['hava_verme_tarihi'])
-                flash1_d = _parse_ut_date(row['flash1_tarihi'])
+                ekim_d      = _parse_ut_date(row['ekim_tarihi'])
+                baski_d     = _parse_ut_date(row['baski_tarihi'])
+                toprak_d    = _parse_ut_date(row['toprak_serim_tarihi'])
+                tirmik_d    = _parse_ut_date(row['tirmik_tarihi'])
+                hava_d      = _parse_ut_date(row['hava_verme_tarihi'])
+                flash1_d    = _parse_ut_date(row['flash1_tarihi'])
+                flash2_d    = _parse_ut_date(row.get('flash2_tarihi'))
+                bosaltma_d  = _parse_ut_date(row.get('oda_bosaltma_tarihi'))
 
                 # Sonraki tahmini işlem
-                if flash1_d:
+                if bosaltma_d:
                     sonraki_adi = "✅ Tamamlandı"
                     sonraki_tahmini = None
+                elif flash2_d:
+                    sonraki_adi = "🚪 Oda Boşaltma"
+                    sonraki_tahmini = flash2_d + timedelta(days=5)
+                elif flash1_d:
+                    sonraki_adi = "🍄 2. Flaş"
+                    sonraki_tahmini = flash1_d + timedelta(days=14)
                 elif hava_d:
                     sonraki_adi = "🍄 1. Flaş"
                     sonraki_tahmini = hava_d + timedelta(days=11)
@@ -2423,16 +2453,18 @@ elif menu == "🌱 Üretim Takvimi":
 
                 with st.expander(baslik, expanded=True):
                     evre_verileri = [
-                        ("🌱 Ekim",        ekim_d,   None,    10, "⚙️ Baskı"),
-                        ("⚙️ Baskı",        baski_d,  ekim_d,   1, "🌍 Toprak Serim"),
-                        ("🌍 Toprak Serim", toprak_d, baski_d,  9, "🔧 Tırmık"),
-                        ("🔧 Tırmık",       tirmik_d, toprak_d, 3, "💨 Hava Verme"),
-                        ("💨 Hava Verme",   hava_d,   tirmik_d,11, "🍄 1. Flaş"),
-                        ("🍄 1. Flaş",      flash1_d, hava_d,  None, None),
+                        ("🌱 Ekim",         ekim_d,     None,       10, "⚙️ Baskı"),
+                        ("⚙️ Baskı",         baski_d,    ekim_d,      1, "🌍 Toprak Serim"),
+                        ("🌍 Toprak Serim",  toprak_d,   baski_d,     9, "🔧 Tırmık"),
+                        ("🔧 Tırmık",        tirmik_d,   toprak_d,    3, "💨 Hava Verme"),
+                        ("💨 Hava Verme",    hava_d,     tirmik_d,   11, "🍄 1. Flaş"),
+                        ("🍄 1. Flaş",       flash1_d,   hava_d,     14, "🍄 2. Flaş"),
+                        ("🍄 2. Flaş",       flash2_d,   flash1_d,    5, "🚪 Oda Boşaltma"),
+                        ("🚪 Oda Boşaltma",  bosaltma_d, flash2_d,  None, None),
                     ]
 
-                    cols6 = st.columns(6)
-                    dates_list = [ekim_d, baski_d, toprak_d, tirmik_d, hava_d, flash1_d]
+                    cols6 = st.columns(8)
+                    dates_list = [ekim_d, baski_d, toprak_d, tirmik_d, hava_d, flash1_d, flash2_d, bosaltma_d]
 
                     for i, (lbl, evre_dt, onc_dt, sgun, slbl) in enumerate(evre_verileri):
                         with cols6[i]:
@@ -2472,6 +2504,16 @@ elif menu == "🌱 Üretim Takvimi":
                                 tahmini_flash = ekim_d + timedelta(days=10 + 1 + 9 + 3 + 11)
                             if flash1_d:
                                 st.metric("1. Flaş Başladı", flash1_d.strftime('%d.%m.%Y'))
+                                tahmini_flash2 = flash1_d + timedelta(days=14)
+                                if flash2_d:
+                                    st.metric("2. Flaş Başladı", flash2_d.strftime('%d.%m.%Y'))
+                                else:
+                                    kalan_f2 = (tahmini_flash2 - bugun).days
+                                    st.metric(
+                                        "Tahmini 2. Flaş",
+                                        tahmini_flash2.strftime('%d.%m.%Y'),
+                                        delta=f"{kalan_f2} gün kaldı" if kalan_f2 >= 0 else f"{abs(kalan_f2)} gün geçti"
+                                    )
                             else:
                                 kalan_flash = (tahmini_flash - bugun).days
                                 st.metric(
@@ -2481,8 +2523,16 @@ elif menu == "🌱 Üretim Takvimi":
                                 )
                         with c3:
                             # Şu anki durum
-                            if flash1_d:
-                                st.success("✅ 1. Flaş Başladı")
+                            if bosaltma_d:
+                                st.success("✅ Oda Boşaltıldı")
+                            elif flash2_d:
+                                tahmini_bosaltma = flash2_d + timedelta(days=5)
+                                kalan_bos = (tahmini_bosaltma - bugun).days
+                                st.info(f"🍄 2. Flaş — Oda Boşaltma: {tahmini_bosaltma.strftime('%d.%m.%Y')} ({kalan_bos} gün)")
+                            elif flash1_d:
+                                tahmini_flash2 = flash1_d + timedelta(days=14)
+                                kalan_f2 = (tahmini_flash2 - bugun).days
+                                st.info(f"🍄 1. Flaş — 2. Flaş: {tahmini_flash2.strftime('%d.%m.%Y')} ({kalan_f2} gün)")
                             elif hava_d:
                                 st.info(f"💨 Hava Verildi — 1. Flaş bekleniyor")
                             elif tirmik_d:
@@ -2499,12 +2549,14 @@ elif menu == "🌱 Üretim Takvimi":
                     if st.toggle("✏️ Tarihleri Düzenle", key=f"tog_{_edit_key}"):
                         st.caption("Tarihi silmek için ilgili checkbox'ı kaldırın.")
                         _alan_adlari = [
-                            ("ekim_tarihi",         "🌱 Ekim",        ekim_d),
-                            ("baski_tarihi",        "⚙️ Baskı",        baski_d),
-                            ("toprak_serim_tarihi", "🌍 Toprak Serim", toprak_d),
-                            ("tirmik_tarihi",       "🔧 Tırmık",       tirmik_d),
-                            ("hava_verme_tarihi",   "💨 Hava Verme",   hava_d),
-                            ("flash1_tarihi",       "🍄 1. Flaş",      flash1_d),
+                            ("ekim_tarihi",          "🌱 Ekim",          ekim_d),
+                            ("baski_tarihi",         "⚙️ Baskı",          baski_d),
+                            ("toprak_serim_tarihi",  "🌍 Toprak Serim",   toprak_d),
+                            ("tirmik_tarihi",        "🔧 Tırmık",         tirmik_d),
+                            ("hava_verme_tarihi",    "💨 Hava Verme",     hava_d),
+                            ("flash1_tarihi",        "🍄 1. Flaş",        flash1_d),
+                            ("flash2_tarihi",        "🍄 2. Flaş",        flash2_d),
+                            ("oda_bosaltma_tarihi",  "🚪 Oda Boşaltma",   bosaltma_d),
                         ]
                         _edit_vals = {}
                         _col_pairs = st.columns(3)
@@ -2529,15 +2581,18 @@ elif menu == "🌱 Üretim Takvimi":
                             c = conn.cursor()
                             c.execute("""UPDATE oda_uretim_takip SET
                                 ekim_tarihi=?, baski_tarihi=?, toprak_serim_tarihi=?,
-                                tirmik_tarihi=?, hava_verme_tarihi=?, flash1_tarihi=?, aciklama=?
+                                tirmik_tarihi=?, hava_verme_tarihi=?, flash1_tarihi=?,
+                                flash2_tarihi=?, oda_bosaltma_tarihi=?, aciklama=?
                                 WHERE id=?""",
                                 (
-                                    str(_edit_vals["ekim_tarihi"])         if _edit_vals["ekim_tarihi"]         else None,
-                                    str(_edit_vals["baski_tarihi"])        if _edit_vals["baski_tarihi"]        else None,
-                                    str(_edit_vals["toprak_serim_tarihi"]) if _edit_vals["toprak_serim_tarihi"] else None,
-                                    str(_edit_vals["tirmik_tarihi"])       if _edit_vals["tirmik_tarihi"]       else None,
-                                    str(_edit_vals["hava_verme_tarihi"])   if _edit_vals["hava_verme_tarihi"]   else None,
-                                    str(_edit_vals["flash1_tarihi"])       if _edit_vals["flash1_tarihi"]       else None,
+                                    str(_edit_vals["ekim_tarihi"])          if _edit_vals["ekim_tarihi"]          else None,
+                                    str(_edit_vals["baski_tarihi"])         if _edit_vals["baski_tarihi"]         else None,
+                                    str(_edit_vals["toprak_serim_tarihi"])  if _edit_vals["toprak_serim_tarihi"]  else None,
+                                    str(_edit_vals["tirmik_tarihi"])        if _edit_vals["tirmik_tarihi"]        else None,
+                                    str(_edit_vals["hava_verme_tarihi"])    if _edit_vals["hava_verme_tarihi"]    else None,
+                                    str(_edit_vals["flash1_tarihi"])        if _edit_vals["flash1_tarihi"]        else None,
+                                    str(_edit_vals["flash2_tarihi"])        if _edit_vals["flash2_tarihi"]        else None,
+                                    str(_edit_vals["oda_bosaltma_tarihi"])  if _edit_vals["oda_bosaltma_tarihi"]  else None,
                                     _edit_aciklama,
                                     _ut_row_id
                                 )
@@ -2570,8 +2625,10 @@ elif menu == "🌱 Üretim Takvimi":
                 baski_d  = _parse_ut_date(row['baski_tarihi'])
                 toprak_d = _parse_ut_date(row['toprak_serim_tarihi'])
                 tirmik_d = _parse_ut_date(row['tirmik_tarihi'])
-                hava_d   = _parse_ut_date(row['hava_verme_tarihi'])
-                flash1_d = _parse_ut_date(row['flash1_tarihi'])
+                hava_d      = _parse_ut_date(row['hava_verme_tarihi'])
+                flash1_d    = _parse_ut_date(row['flash1_tarihi'])
+                flash2_d    = _parse_ut_date(row.get('flash2_tarihi'))
+                bosaltma_d  = _parse_ut_date(row.get('oda_bosaltma_tarihi'))
 
                 if not ekim_d:
                     continue
@@ -2588,13 +2645,17 @@ elif menu == "🌱 Üretim Takvimi":
                     fl_t = toprak_d + timedelta(days=23)
                 else:
                     fl_t = hv_t + timedelta(days=11)
+                fl2_t = flash2_d  or fl_t       + timedelta(days=14)
+                bos_t = bosaltma_d or fl2_t     + timedelta(days=5)
 
                 segmentler = [
-                    ("Ekim → Baskı",    ekim_d,  b_t,   baski_d is not None),
-                    ("Baskı → Toprak",  b_t,     tp_t,  toprak_d is not None),
-                    ("Toprak → Tırmık", tp_t,    tr_t,  tirmik_d is not None),
-                    ("Tırmık → Hava",   tr_t,    hv_t,  hava_d is not None),
-                    ("Hava → 1. Flaş",  hv_t,    fl_t,  flash1_d is not None),
+                    ("Ekim → Baskı",        ekim_d,  b_t,    baski_d is not None),
+                    ("Baskı → Toprak",      b_t,     tp_t,   toprak_d is not None),
+                    ("Toprak → Tırmık",     tp_t,    tr_t,   tirmik_d is not None),
+                    ("Tırmık → Hava",       tr_t,    hv_t,   hava_d is not None),
+                    ("Hava → 1. Flaş",      hv_t,    fl_t,   flash1_d is not None),
+                    ("1. Flaş → 2. Flaş",   fl_t,    fl2_t,  flash2_d is not None),
+                    ("2. Flaş → Boşaltma",  fl2_t,   bos_t,  bosaltma_d is not None),
                 ]
 
                 for seg_adi, seg_bas, seg_bit, gercek in segmentler:
@@ -2609,11 +2670,13 @@ elif menu == "🌱 Üretim Takvimi":
             if gantt_rows:
                 df_gantt = pd.DataFrame(gantt_rows)
                 RENK_MAP = {
-                    "Ekim → Baskı":    "#4CAF50",
-                    "Baskı → Toprak":  "#2196F3",
-                    "Toprak → Tırmık": "#FF9800",
-                    "Tırmık → Hava":   "#9C27B0",
-                    "Hava → 1. Flaş":  "#F44336",
+                    "Ekim → Baskı":         "#4CAF50",
+                    "Baskı → Toprak":       "#2196F3",
+                    "Toprak → Tırmık":      "#FF9800",
+                    "Tırmık → Hava":        "#9C27B0",
+                    "Hava → 1. Flaş":       "#F44336",
+                    "1. Flaş → 2. Flaş":   "#E91E63",
+                    "2. Flaş → Boşaltma":  "#795548",
                 }
                 fig_gantt = px.timeline(
                     df_gantt,
