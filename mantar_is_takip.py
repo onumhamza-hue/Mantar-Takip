@@ -168,7 +168,27 @@ def _read_sql(sql, conn, params=None):
         raw    = conn._conn if hasattr(conn, '_conn') else conn
         cur    = raw.cursor()
         try:
-            cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
+            try:
+                cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
+            except Exception as e:
+                if 'undefined_table' in str(e).lower() and 'is_plani' in pg_sql.lower():
+                    # Eğer tablo henüz yaratılmamışsa, yaratıp sorguyu yeniden çalıştır
+                    cur.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                                   (id SERIAL PRIMARY KEY,
+                                    oda_id INTEGER NOT NULL,
+                                    donem_no INTEGER,
+                                    is_adi TEXT NOT NULL,
+                                    referans_asama TEXT,
+                                    hatirlatma_gun_once INTEGER DEFAULT 0,
+                                    plan_tarihi DATE,
+                                    aciklama TEXT,
+                                    durum TEXT DEFAULT 'Beklemede',
+                                    tamamlanma_tarihi DATE,
+                                    olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                    FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+                    cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
+                else:
+                    raise
             if cur.description is None:
                 return pd.DataFrame()
             cols = [d[0].lower() for d in cur.description]
