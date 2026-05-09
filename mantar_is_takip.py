@@ -177,21 +177,43 @@ def _read_sql(sql, conn, params=None):
                     ('relation "is_plani"' in error_text and 'does not exist' in error_text) or
                     'does not exist' in error_text and 'is_plani' in error_text
                 ):
-                    # Eğer tablo henüz yaratılmamışsa, yaratıp sorguyu yeniden çalıştır
-                    cur.execute('''CREATE TABLE IF NOT EXISTS is_plani
-                                   (id SERIAL PRIMARY KEY,
-                                    oda_id INTEGER NOT NULL,
-                                    donem_no INTEGER,
-                                    is_adi TEXT NOT NULL,
-                                    referans_asama TEXT,
-                                    hatirlatma_gun_once INTEGER DEFAULT 0,
-                                    plan_tarihi DATE,
-                                    aciklama TEXT,
-                                    durum TEXT DEFAULT 'Beklemede',
-                                    tamamlanma_tarihi DATE,
-                                    olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                    FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
-                    cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
+                    # PostgreSQL'de hata sonrası transaction durumunu sıfırla
+                    try:
+                        raw.rollback()
+                    except Exception:
+                        pass
+                    
+                    # Yeni cursor ile tabloyu oluştur
+                    create_cur = raw.cursor()
+                    try:
+                        create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                                             (id SERIAL PRIMARY KEY,
+                                              oda_id INTEGER NOT NULL,
+                                              donem_no INTEGER,
+                                              is_adi TEXT NOT NULL,
+                                              referans_asama TEXT,
+                                              hatirlatma_gun_once INTEGER DEFAULT 0,
+                                              plan_tarihi DATE,
+                                              aciklama TEXT,
+                                              durum TEXT DEFAULT 'Beklemede',
+                                              tamamlanma_tarihi DATE,
+                                              olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                              FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+                        raw.commit()
+                    finally:
+                        create_cur.close()
+                    
+                    # Orijinal sorguyu yeni cursor ile çalıştır
+                    retry_cur = raw.cursor()
+                    try:
+                        retry_cur.execute(pg_sql, params) if params is not None else retry_cur.execute(pg_sql)
+                        if retry_cur.description is None:
+                            return pd.DataFrame()
+                        cols = [d[0].lower() for d in retry_cur.description]
+                        rows = retry_cur.fetchall()
+                        return pd.DataFrame(rows, columns=cols)
+                    finally:
+                        retry_cur.close()
                 else:
                     raise
             if cur.description is None:
