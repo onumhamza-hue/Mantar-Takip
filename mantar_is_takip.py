@@ -416,6 +416,23 @@ def init_database():
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
 
+    # İş Planı Profili tablosu (şablonlar)
+    c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  profil_adi TEXT NOT NULL UNIQUE,
+                  aciklama TEXT,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+    # İş Planı Profil İşleri tablosu (profil içindeki her iş)
+    c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  profil_id INTEGER NOT NULL,
+                  is_adi TEXT NOT NULL,
+                  referans_asama TEXT,
+                  hatirlatma_gun_once INTEGER DEFAULT 0,
+                  siralama INTEGER DEFAULT 0,
+                  FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
+
     # Cariler tablosu
     c.execute('''CREATE TABLE IF NOT EXISTS cariler
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3017,7 +3034,7 @@ elif menu == "📅 İş Planı":
     if df_odalar_plani.empty:
         st.warning("⚠️ Önce oda eklemelisiniz. Oda Yönetimi menüsünden ekleyin.")
     else:
-        tab1, tab2 = st.tabs(["📝 Plan Oluştur", "⏰ Günü Gelenler"])
+        tab1, tab2, tab3 = st.tabs(["📝 Plan Oluştur", "⏰ Günü Gelenler", "📋 Profil Yönetimi"])
 
         with tab1:
             st.subheader("Yeni İş Planı Kaydı")
@@ -3204,6 +3221,173 @@ elif menu == "📅 İş Planı":
                                 conn.close()
                                 st.success("Görev tamamlandı olarak işaretlendi.")
                                 _rerun()
+
+        with tab3:
+            st.subheader("📋 İş Planı Profilleri")
+            st.markdown("Tüm odalara uygulanabilecek iş planı şablonları oluşturun ve yönetin.")
+
+            subtab1, subtab2, subtab3 = st.tabs(["➕ Yeni Profil", "📚 Profilleri Görüntüle", "🔧 Profil Uygula"])
+
+            with subtab1:
+                st.markdown("### Yeni İş Planı Profili Oluştur")
+                prof_adi = st.text_input("Profil Adı (benzersiz)", key="prof_adi")
+                prof_acik = st.text_area("Profil Açıklaması", key="prof_acik")
+
+                st.markdown("#### İşleri Ekle")
+                is_adilar = []
+                referans_asamalar = []
+                hatirlatma_gunleri = []
+
+                num_isler = st.number_input("Kaç iş eklemek istersiniz?", min_value=1, max_value=20, value=3, key="prof_num_isler")
+                for i in range(int(num_isler)):
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    with col1:
+                        is_adi = st.text_input(f"İş {i+1} Adı", key=f"prof_is_adi_{i}")
+                        is_adilar.append(is_adi)
+                    with col2:
+                        ref_as = st.selectbox(
+                            f"İş {i+1} Referans",
+                            ["🌱 Ekim", "⚙️ Baskı", "🌍 Toprak Serim", "🔧 Tırmık", "💨 Hava Verme", "🍄 1. Flaş", "🍄 2. Flaş", "🚪 Oda Boşaltma"],
+                            key=f"prof_ref_as_{i}"
+                        )
+                        referans_asamalar.append({
+                            "🌱 Ekim": "ekim_tarihi",
+                            "⚙️ Baskı": "baski_tarihi",
+                            "🌍 Toprak Serim": "toprak_serim_tarihi",
+                            "🔧 Tırmık": "tirmik_tarihi",
+                            "💨 Hava Verme": "hava_verme_tarihi",
+                            "🍄 1. Flaş": "flash1_tarihi",
+                            "🍄 2. Flaş": "flash2_tarihi",
+                            "🚪 Oda Boşaltma": "oda_bosaltma_tarihi",
+                        }.get(ref_as))
+                    with col3:
+                        hat_gun = st.number_input(f"Gün Öncesi", min_value=0, max_value=30, value=5, key=f"prof_hat_gun_{i}")
+                        hatirlatma_gunleri.append(hat_gun)
+
+                if st.button("💾 Profili Kaydet", type="primary", key="prof_save"):
+                    if not prof_adi:
+                        st.error("Profil adı boş bırakılamaz.")
+                    elif not all(is_adilar):
+                        st.error("Tüm iş adları doldurulmalıdır.")
+                    else:
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        try:
+                            c.execute("INSERT INTO is_plani_profili (profil_adi, aciklama) VALUES (?, ?)", (prof_adi, prof_acik or None))
+                            prof_id = c.lastrowid
+                            for idx, (is_adi, ref_as, hat_gun) in enumerate(zip(is_adilar, referans_asamalar, hatirlatma_gunleri)):
+                                if is_adi:
+                                    c.execute("INSERT INTO is_plani_profil_isahleri (profil_id, is_adi, referans_asama, hatirlatma_gun_once, siralama) VALUES (?, ?, ?, ?, ?)",
+                                              (prof_id, is_adi, ref_as, int(hat_gun), idx))
+                            conn.commit()
+                            st.success(f"✅ '{prof_adi}' profili kaydedildi.")
+                            _rerun()
+                        except Exception as e:
+                            st.error(f"Hata: {e}")
+                        finally:
+                            conn.close()
+
+            with subtab2:
+                st.markdown("### Mevcut Profiller")
+                conn = get_db_connection()
+                df_profiler = _read_sql("SELECT * FROM is_plani_profili ORDER BY profil_adi", conn)
+                conn.close()
+
+                if df_profiler.empty:
+                    st.info("Henüz profil yoktur.")
+                else:
+                    for _, prof_row in df_profiler.iterrows():
+                        prof_id = prof_row['id']
+                        prof_name = prof_row['profil_adi']
+                        prof_desc = prof_row['aciklama'] or ""
+
+                        with st.expander(f"📋 {prof_name}", expanded=False):
+                            if prof_desc:
+                                st.markdown(f"**Açıklama:** {prof_desc}")
+
+                            conn = get_db_connection()
+                            df_isahleri = _read_sql("SELECT * FROM is_plani_profil_isahleri WHERE profil_id=? ORDER BY siralama", conn, params=(prof_id,))
+                            conn.close()
+
+                            if not df_isahleri.empty:
+                                st.markdown("**İşler:**")
+                                for _, iş_row in df_isahleri.iterrows():
+                                    ref_lbl = _asama_label(iş_row['referans_asama'])
+                                    st.markdown(f"- **{iş_row['is_adi']}** ({ref_lbl} — {int(iş_row['hatirlatma_gun_once'])} gün önce)")
+
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("✏️ Düzenle", key=f"prof_edit_{prof_id}"):
+                                    st.warning("Düzenleme özelliği yakında eklenecek.")
+                            with col2:
+                                if st.button("🗑️ Sil", key=f"prof_del_{prof_id}"):
+                                    conn = get_db_connection()
+                                    c = conn.cursor()
+                                    c.execute("DELETE FROM is_plani_profil_isahleri WHERE profil_id=?", (prof_id,))
+                                    c.execute("DELETE FROM is_plani_profili WHERE id=?", (prof_id,))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success(f"'{prof_name}' profili silindi.")
+                                    _rerun()
+
+            with subtab3:
+                st.markdown("### Profili Odalara Uygula")
+                conn = get_db_connection()
+                df_profiler = _read_sql("SELECT id, profil_adi FROM is_plani_profili ORDER BY profil_adi", conn)
+                conn.close()
+
+                if df_profiler.empty:
+                    st.warning("Uygulanacak profil yoktur. Önce profil oluşturun.")
+                else:
+                    prof_secim = st.selectbox("Profil Seçin", df_profiler['profil_adi'].tolist(), key="prof_sec")
+                    prof_id = df_profiler[df_profiler['profil_adi'] == prof_secim]['id'].values[0]
+
+                    st.markdown("**Profilin İşleri:**")
+                    conn = get_db_connection()
+                    df_isahleri = _read_sql("SELECT * FROM is_plani_profil_isahleri WHERE profil_id=? ORDER BY siralama", conn, params=(prof_id,))
+                    conn.close()
+
+                    for _, iş_row in df_isahleri.iterrows():
+                        ref_lbl = _asama_label(iş_row['referans_asama'])
+                        st.caption(f"- {iş_row['is_adi']} ({ref_lbl} — {int(iş_row['hatirlatma_gun_once'])} gün)")
+
+                    st.markdown("---")
+                    st.markdown("**Uygulanacak Odalar:**")
+
+                    odalar_all = _cached_odalar()
+                    sec_odalar = st.multiselect("Odaları Seçin (boş bırakınca tümüne uygulanır)", odalar_all['oda_adi'].tolist(), key="prof_sec_odalar")
+
+                    donem_plani = st.selectbox("Hangi dönem için uygulanacak?", ["Genel", "Son Dönem"], key="prof_donem")
+
+                    if st.button("✅ Profili Uygula", type="primary", key="prof_apply"):
+                        # Seçilen odalara profili uygula
+                        odalar_to_apply = sec_odalar if sec_odalar else odalar_all['oda_adi'].tolist()
+                        oda_ids = odalar_all[odalar_all['oda_adi'].isin(odalar_to_apply)]['id'].tolist()
+
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        try:
+                            for oda_id in oda_ids:
+                                # Son dönem veya genel
+                                donem_no = None
+                                if donem_plani == "Son Dönem":
+                                    df_son_donem = _read_sql("SELECT MAX(donem_no) as donem FROM oda_uretim_takip WHERE oda_id=?", conn, params=(oda_id,))
+                                    if not df_son_donem.empty and df_son_donem.iloc[0, 0]:
+                                        donem_no = int(df_son_donem.iloc[0, 0])
+
+                                # Profil işlerini bu odaya ekle
+                                for _, iş_row in df_isahleri.iterrows():
+                                    c.execute(
+                                        "INSERT INTO is_plani (oda_id, donem_no, is_adi, referans_asama, hatirlatma_gun_once) VALUES (?, ?, ?, ?, ?)",
+                                        (oda_id, donem_no, iş_row['is_adi'], iş_row['referans_asama'], int(iş_row['hatirlatma_gun_once']))
+                                    )
+                            conn.commit()
+                            st.success(f"✅ '{prof_secim}' profili {len(oda_ids)} odaya uygulandı.")
+                            _rerun()
+                        except Exception as e:
+                            st.error(f"Hata: {e}")
+                        finally:
+                            conn.close()
 
 # Veri Yedekleme
 elif menu == "📥 Veri Yedekleme":
