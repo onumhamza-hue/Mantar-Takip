@@ -183,11 +183,12 @@ def _read_sql(sql, conn, params=None):
                 cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
             except Exception as e:
                 error_text = f"{e}".lower() + " " + repr(e).lower()
-                if ('is_plani' in pg_sql.lower() or 'is_plani_profili' in pg_sql.lower()) and (
+                if ('is_plani' in pg_sql.lower() or 'is_plani_profili' in pg_sql.lower() or 'is_plani_profil_isahleri' in pg_sql.lower()) and (
                     'undefinedtable' in error_text or
                     ('relation "is_plani"' in error_text and 'does not exist' in error_text) or
                     ('relation "is_plani_profili"' in error_text and 'does not exist' in error_text) or
-                    'does not exist' in error_text and ('is_plani' in error_text or 'is_plani_profili' in error_text)
+                    ('relation "is_plani_profil_isahleri"' in error_text and 'does not exist' in error_text) or
+                    'does not exist' in error_text and ('is_plani' in error_text or 'is_plani_profili' in error_text or 'is_plani_profil_isahleri' in error_text)
                 ):
                     # PostgreSQL'de hata sonrası transaction durumunu sıfırla
                     try:
@@ -198,7 +199,16 @@ def _read_sql(sql, conn, params=None):
                     # Yeni cursor ile tabloları oluştur
                     create_cur = raw.cursor()
                     try:
-                        if 'is_plani_profili' in pg_sql.lower():
+                        if 'is_plani_profil_isahleri' in pg_sql.lower():
+                            create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
+                                                 (id SERIAL PRIMARY KEY,
+                                                  profil_id INTEGER NOT NULL,
+                                                  is_adi TEXT NOT NULL,
+                                                  referans_asama TEXT,
+                                                  hatirlatma_gun_once INTEGER DEFAULT 0,
+                                                  siralama INTEGER DEFAULT 0,
+                                                  FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
+                        elif 'is_plani_profili' in pg_sql.lower():
                             create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
                                                  (id SERIAL PRIMARY KEY,
                                                   profil_adi TEXT NOT NULL UNIQUE,
