@@ -3472,6 +3472,32 @@ elif menu == "📅 İş Planı":
 
                     st.markdown("**Profilin İşleri:**")
                     conn = get_db_connection()
+                    
+                    # FAILSAFE: Ensure table exists before querying
+                    try:
+                        # First ensure parent table exists
+                        conn.cursor().execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
+                                                     (id SERIAL PRIMARY KEY,
+                                                      profil_adi TEXT NOT NULL UNIQUE,
+                                                      aciklama TEXT,
+                                                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                        
+                        # Then ensure child table exists
+                        conn.cursor().execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
+                                                     (id SERIAL PRIMARY KEY,
+                                                      profil_id INTEGER NOT NULL,
+                                                      is_adi TEXT NOT NULL,
+                                                      referans_asama TEXT,
+                                                      hatirlatma_gun_once INTEGER DEFAULT 0,
+                                                      siralama INTEGER DEFAULT 0,
+                                                      FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
+                        if IS_CLOUD:
+                            conn._conn.commit()
+                        else:
+                            conn.commit()
+                    except Exception:
+                        pass  # Tables might already exist, that's fine
+                    
                     df_isahleri = _read_sql("SELECT * FROM is_plani_profil_isahleri WHERE profil_id=? ORDER BY siralama", conn, params=(prof_id,))
                     conn.close()
 
