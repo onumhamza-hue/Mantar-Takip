@@ -182,10 +182,11 @@ def _read_sql(sql, conn, params=None):
                 cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
             except Exception as e:
                 error_text = f"{e}".lower() + " " + repr(e).lower()
-                if 'is_plani' in pg_sql.lower() and (
+                if ('is_plani' in pg_sql.lower() or 'is_plani_profili' in pg_sql.lower()) and (
                     'undefinedtable' in error_text or
                     ('relation "is_plani"' in error_text and 'does not exist' in error_text) or
-                    'does not exist' in error_text and 'is_plani' in error_text
+                    ('relation "is_plani_profili"' in error_text and 'does not exist' in error_text) or
+                    'does not exist' in error_text and ('is_plani' in error_text or 'is_plani_profili' in error_text)
                 ):
                     # PostgreSQL'de hata sonrası transaction durumunu sıfırla
                     try:
@@ -193,22 +194,38 @@ def _read_sql(sql, conn, params=None):
                     except Exception:
                         pass
                     
-                    # Yeni cursor ile tabloyu oluştur
+                    # Yeni cursor ile tabloları oluştur
                     create_cur = raw.cursor()
                     try:
-                        create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani
-                                             (id SERIAL PRIMARY KEY,
-                                              oda_id INTEGER NOT NULL,
-                                              donem_no INTEGER,
-                                              is_adi TEXT NOT NULL,
-                                              referans_asama TEXT,
-                                              hatirlatma_gun_once INTEGER DEFAULT 0,
-                                              plan_tarihi DATE,
-                                              aciklama TEXT,
-                                              durum TEXT DEFAULT 'Beklemede',
-                                              tamamlanma_tarihi DATE,
-                                              olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                              FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+                        if 'is_plani_profili' in pg_sql.lower():
+                            create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
+                                                 (id SERIAL PRIMARY KEY,
+                                                  profil_adi TEXT NOT NULL UNIQUE,
+                                                  aciklama TEXT,
+                                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                            # Also create the related table
+                            create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
+                                                 (id SERIAL PRIMARY KEY,
+                                                  profil_id INTEGER NOT NULL,
+                                                  is_adi TEXT NOT NULL,
+                                                  referans_asama TEXT,
+                                                  hatirlatma_gun_once INTEGER DEFAULT 0,
+                                                  siralama INTEGER DEFAULT 0,
+                                                  FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
+                        else:
+                            create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                                                 (id SERIAL PRIMARY KEY,
+                                                  oda_id INTEGER NOT NULL,
+                                                  donem_no INTEGER,
+                                                  is_adi TEXT NOT NULL,
+                                                  referans_asama TEXT,
+                                                  hatirlatma_gun_once INTEGER DEFAULT 0,
+                                                  plan_tarihi DATE,
+                                                  aciklama TEXT,
+                                                  durum TEXT DEFAULT 'Beklemede',
+                                                  tamamlanma_tarihi DATE,
+                                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
                         raw.commit()
                     finally:
                         create_cur.close()
