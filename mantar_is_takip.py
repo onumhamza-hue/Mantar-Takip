@@ -448,8 +448,8 @@ def init_database():
     c = conn.cursor()
     
     # Gider kalemleri tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS gider_kalemleri
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS gider_kalemleri
+                 (id SERIAL PRIMARY KEY,
                   kalem_adi TEXT NOT NULL,
                   birim_fiyat REAL NOT NULL,
                   aciklama TEXT,
@@ -457,8 +457,8 @@ def init_database():
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
     # Odalar tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS odalar
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS odalar
+                 (id SERIAL PRIMARY KEY,
                   oda_adi TEXT NOT NULL UNIQUE,
                   alan_m2 REAL,
                   kapasite_kg REAL,
@@ -467,8 +467,8 @@ def init_database():
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
     # Oda giderleri tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS oda_giderleri
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS oda_giderleri
+                 (id SERIAL PRIMARY KEY,
                   oda_id INTEGER NOT NULL,
                   gider_kalemi TEXT NOT NULL,
                   tutar REAL NOT NULL,
@@ -477,8 +477,8 @@ def init_database():
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
     
     # Günlük hasat tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS gunluk_hasat
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS gunluk_hasat
+                 (id SERIAL PRIMARY KEY,
                   oda_id INTEGER NOT NULL,
                   tarih DATE NOT NULL,
                   hasat_kg REAL NOT NULL,
@@ -487,8 +487,8 @@ def init_database():
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
     
     # Satış tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS satislar
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS satislar
+                 (id SERIAL PRIMARY KEY,
                   oda_id INTEGER NOT NULL,
                   tarih DATE NOT NULL,
                   miktar_kg REAL NOT NULL,
@@ -499,8 +499,8 @@ def init_database():
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
     
     # İklim verileri tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS iklim_verileri
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS iklim_verileri
+                 (id SERIAL PRIMARY KEY,
                   oda_id INTEGER NOT NULL,
                   tarih DATE NOT NULL,
                   saat TIME NOT NULL,
@@ -511,8 +511,8 @@ def init_database():
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
     
     # İşçiler tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS isciler
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS isciler
+                 (id SERIAL PRIMARY KEY,
                   ad_soyad TEXT NOT NULL,
                   telefon TEXT,
                   ucret_saati REAL,
@@ -520,8 +520,8 @@ def init_database():
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
     # Puantaj tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS puantaj
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS puantaj
+                 (id SERIAL PRIMARY KEY,
                   isci_id INTEGER NOT NULL,
                   tarih DATE NOT NULL,
                   saat_sayisi REAL NOT NULL DEFAULT 0,
@@ -536,8 +536,8 @@ def init_database():
         pass  # Sütun zaten mevcut
 
     # Oda Üretim Takip tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS oda_uretim_takip
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS oda_uretim_takip
+                 (id SERIAL PRIMARY KEY,
                   oda_id INTEGER NOT NULL,
                   donem_no INTEGER DEFAULT 1,
                   ekim_tarihi DATE,
@@ -553,8 +553,8 @@ def init_database():
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
 
     # İş Planı tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS is_plani
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                 (id SERIAL PRIMARY KEY,
                   oda_id INTEGER NOT NULL,
                   donem_no INTEGER,
                   is_adi TEXT NOT NULL,
@@ -570,15 +570,15 @@ def init_database():
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
 
     # İş Planı Profili tablosu (şablonlar)
-    c.execute(f'''CREATE TABLE IF NOT EXISTS is_plani_profili
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
+                 (id SERIAL PRIMARY KEY,
                   profil_adi TEXT NOT NULL UNIQUE,
                   aciklama TEXT,
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
 
     # İş Planı Profil İşleri tablosu (profil içindeki her iş)
-    c.execute(f'''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
+                 (id SERIAL PRIMARY KEY,
                   profil_id INTEGER NOT NULL,
                   is_adi TEXT NOT NULL,
                   referans_asama TEXT,
@@ -587,8 +587,8 @@ def init_database():
                   FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
 
     # Cariler tablosu
-    c.execute(f'''CREATE TABLE IF NOT EXISTS cariler
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS cariler
+                 (id SERIAL PRIMARY KEY,
                   cari_adi TEXT NOT NULL,
                   telefon TEXT,
                   adres TEXT,
@@ -616,8 +616,8 @@ def init_database():
         c.execute("UPDATE satislar SET cari_id=? WHERE alan_kisi=? AND cari_id IS NULL", (cari_id_val, alan_kisi_val))
 
     # Cari hareketler tablosu (4 işlem türü: SATIS, ALIS, TAHSILAT, ODEME)
-    c.execute(f'''CREATE TABLE IF NOT EXISTS cari_hareketler
-                 (id {id_type},
+    c.execute('''CREATE TABLE IF NOT EXISTS cari_hareketler
+                 (id SERIAL PRIMARY KEY,
                   cari_id INTEGER NOT NULL REFERENCES cariler(id),
                   tarih DATE NOT NULL,
                   islem_turu TEXT NOT NULL CHECK (islem_turu IN ('SATIS', 'ALIS', 'TAHSILAT', 'ODEME')),
@@ -725,15 +725,16 @@ def _ensure_is_plani_table():
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        id_type = "SERIAL PRIMARY KEY" if IS_CLOUD else "INTEGER PRIMARY KEY AUTOINCREMENT"
-        c.execute(f'''CREATE TABLE IF NOT EXISTS is_plani
-                     (id {id_type},
+        c.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                     (id SERIAL PRIMARY KEY,
                       oda_id INTEGER NOT NULL,
                       donem_no INTEGER,
                       is_adi TEXT NOT NULL,
                       referans_asama TEXT,
+                      planlanan_tarih DATE,
+                      yapildimi INTEGER DEFAULT 0,
+                      yapilis_tarihi DATE,
                       hatirlatma_gun_once INTEGER DEFAULT 0,
-                      plan_tarihi DATE,
                       aciklama TEXT,
                       durum TEXT DEFAULT 'Beklemede',
                       tamamlanma_tarihi DATE,
