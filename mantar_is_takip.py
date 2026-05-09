@@ -24,6 +24,10 @@ st.set_page_config(
 # ── Şifre Koruması ────────────────────────────────────────────────────────────
 APP_SIFRE = "mantar2024"   # ← Buradan şifrenizi değiştirebilirsiniz
 
+# Session state'i initialize et
+if "giris_yapildi" not in st.session_state:
+    st.session_state["giris_yapildi"] = False
+
 def _sifre_kontrol():
     if st.session_state.get("giris_yapildi"):
         return True
