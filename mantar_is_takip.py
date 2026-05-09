@@ -24,9 +24,13 @@ st.set_page_config(
 # ── Şifre Koruması ────────────────────────────────────────────────────────────
 APP_SIFRE = "mantar2024"   # ← Buradan şifrenizi değiştirebilirsiniz
 
-# Session state'i initialize et
+# Session state'i initialize et ve URL params'dan kontrol et
 if "giris_yapildi" not in st.session_state:
     st.session_state["giris_yapildi"] = False
+
+# URL'de authenticated parametresi varsa, giriş yapıldı say
+if st.query_params.get("authenticated") == "true":
+    st.session_state["giris_yapildi"] = True
 
 def _sifre_kontrol():
     if st.session_state.get("giris_yapildi"):
@@ -40,6 +44,8 @@ def _sifre_kontrol():
         if st.button("Giriş Yap", type="primary", use_container_width=True):
             if girilen == APP_SIFRE:
                 st.session_state["giris_yapildi"] = True
+                # URL'ye authenticated param ekle
+                st.query_params["authenticated"] = "true"
                 st.rerun()
             else:
                 st.error("❌ Hatalı şifre!")
