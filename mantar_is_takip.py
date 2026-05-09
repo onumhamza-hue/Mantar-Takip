@@ -471,6 +471,36 @@ if _init_err:
     st.error(f"❌ Veritabanı başlatma hatası: {_init_err}")
     st.stop()
 
+# Cloud veya mevcut veritabanında yeni tablo eksikse hızlıca oluştur
+def _ensure_is_plani_table():
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      oda_id INTEGER NOT NULL,
+                      donem_no INTEGER,
+                      is_adi TEXT NOT NULL,
+                      referans_asama TEXT,
+                      hatirlatma_gun_once INTEGER DEFAULT 0,
+                      plan_tarihi DATE,
+                      aciklama TEXT,
+                      durum TEXT DEFAULT 'Beklemede',
+                      tamamlanma_tarihi DATE,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+        if not IS_CLOUD:
+            conn.commit()
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+_ensure_is_plani_table()
+
 # Yan menü
 st.sidebar.title("🍄 Mantar İş Takip")
 st.sidebar.markdown("---")
