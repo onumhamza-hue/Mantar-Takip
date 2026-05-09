@@ -2276,6 +2276,11 @@ elif menu == "📋 Oda Bilgi Kartı":
 
             def _asama_label(key):
                 return {
+                    'ekim_tarihi': '🌱 Ekim',
+                    'baski_tarihi': '⚙️ Baskı',
+                    'toprak_serim_tarihi': '🌍 Toprak Serim',
+                    'tirmik_tarihi': '🔧 Tırmık',
+                    'hava_verme_tarihi': '💨 Hava Verme',
                     'flash1_tarihi': '🍄 1. Flaş',
                     'flash2_tarihi': '🍄 2. Flaş',
                     'oda_bosaltma_tarihi': '🚪 Oda Boşaltma',
@@ -2980,6 +2985,11 @@ elif menu == "📅 İş Planı":
 
     def _asama_label(key):
         return {
+            'ekim_tarihi': '🌱 Ekim',
+            'baski_tarihi': '⚙️ Baskı',
+            'toprak_serim_tarihi': '🌍 Toprak Serim',
+            'tirmik_tarihi': '🔧 Tırmık',
+            'hava_verme_tarihi': '💨 Hava Verme',
             'flash1_tarihi': '🍄 1. Flaş',
             'flash2_tarihi': '🍄 2. Flaş',
             'oda_bosaltma_tarihi': '🚪 Oda Boşaltma',
@@ -3021,13 +3031,18 @@ elif menu == "📅 İş Planı":
             pl_is_adi = st.text_input("Yapılacak İş", key="plan_is_adi")
             pl_referans = st.selectbox(
                 "Referans Aşama",
-                ["Özel Tarih", "🍄 1. Flaş", "🍄 2. Flaş", "🚪 Oda Boşaltma"],
+                ["Özel Tarih", "� Ekim", "⚙️ Baskı", "🌍 Toprak Serim", "🔧 Tırmık", "💨 Hava Verme", "🍄 1. Flaş", "🍄 2. Flaş", "🚪 Oda Boşaltma"],
                 key="plan_referans"
             )
             pl_offset = st.number_input("Kaç gün öncesinden hatırlatılacak?", min_value=0, max_value=30, value=5, step=1, key="plan_offset")
 
             ref_key = {
                 'Özel Tarih': None,
+                '🌱 Ekim': 'ekim_tarihi',
+                '⚙️ Baskı': 'baski_tarihi',
+                '🌍 Toprak Serim': 'toprak_serim_tarihi',
+                '🔧 Tırmık': 'tirmik_tarihi',
+                '💨 Hava Verme': 'hava_verme_tarihi',
                 '🍄 1. Flaş': 'flash1_tarihi',
                 '🍄 2. Flaş': 'flash2_tarihi',
                 '🚪 Oda Boşaltma': 'oda_bosaltma_tarihi',
