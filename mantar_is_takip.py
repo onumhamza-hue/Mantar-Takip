@@ -200,6 +200,13 @@ def _read_sql(sql, conn, params=None):
                     create_cur = raw.cursor()
                     try:
                         if 'is_plani_profil_isahleri' in pg_sql.lower():
+                            # First ensure the parent table exists
+                            create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
+                                                 (id SERIAL PRIMARY KEY,
+                                                  profil_adi TEXT NOT NULL UNIQUE,
+                                                  aciklama TEXT,
+                                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                            # Then create the child table
                             create_cur.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
                                                  (id SERIAL PRIMARY KEY,
                                                   profil_id INTEGER NOT NULL,
@@ -259,6 +266,38 @@ def _read_sql(sql, conn, params=None):
             cols = [d[0].lower() for d in cur.description]
             rows = cur.fetchall()
             return pd.DataFrame(rows, columns=cols)
+        except Exception as e:
+            # Additional debugging for is_plani_profil_isahleri
+            if 'is_plani_profil_isahleri' in pg_sql.lower():
+                error_text = f"{e}".lower() + " " + repr(e).lower()
+                if 'column' in error_text and 'does not exist' in error_text:
+                    # Column doesn't exist - table structure might be wrong
+                    try:
+                        raw.rollback()
+                        fix_cur = raw.cursor()
+                        # Drop and recreate table with correct structure
+                        fix_cur.execute("DROP TABLE IF EXISTS is_plani_profil_isahleri")
+                        fix_cur.execute('''CREATE TABLE is_plani_profil_isahleri
+                                             (id SERIAL PRIMARY KEY,
+                                              profil_id INTEGER NOT NULL,
+                                              is_adi TEXT NOT NULL,
+                                              referans_asama TEXT,
+                                              hatirlatma_gun_once INTEGER DEFAULT 0,
+                                              siralama INTEGER DEFAULT 0,
+                                              FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
+                        raw.commit()
+                        fix_cur.close()
+                        # Retry the original query
+                        retry_cur = raw.cursor()
+                        retry_cur.execute(pg_sql, params) if params is not None else retry_cur.execute(pg_sql)
+                        if retry_cur.description is None:
+                            return pd.DataFrame()
+                        cols = [d[0].lower() for d in retry_cur.description]
+                        rows = retry_cur.fetchall()
+                        return pd.DataFrame(rows, columns=cols)
+                    except Exception:
+                        pass
+            raise
         finally:
             cur.close()
     return pd.read_sql(sql, conn, params=params)
