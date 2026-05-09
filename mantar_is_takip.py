@@ -344,6 +344,21 @@ def init_database():
                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
 
+    # İş Planı tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS is_plani
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  oda_id INTEGER NOT NULL,
+                  donem_no INTEGER,
+                  is_adi TEXT NOT NULL,
+                  referans_asama TEXT,
+                  hatirlatma_gun_once INTEGER DEFAULT 0,
+                  plan_tarihi DATE,
+                  aciklama TEXT,
+                  durum TEXT DEFAULT 'Beklemede',
+                  tamamlanma_tarihi DATE,
+                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+
     # Cariler tablosu
     c.execute('''CREATE TABLE IF NOT EXISTS cariler
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -464,7 +479,7 @@ menu = st.sidebar.radio(
     "Menü",
     ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
      "📋 Oda Bilgi Kartı",
-     "🌱 Üretim Takvimi",
+     "🌱 Üretim Takvimi", "📅 İş Planı",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
      "📥 Veri Yedekleme"]
@@ -2157,6 +2172,73 @@ elif menu == "📋 Oda Bilgi Kartı":
                 use_container_width=True,
                 hide_index=True,
             )
+
+            st.markdown("---")
+            st.markdown("### 📅 Planlanan İşler")
+            conn = get_db_connection()
+            df_kart_plani = _read_sql(
+                """
+                SELECT t.*, ut.flash1_tarihi, ut.flash2_tarihi, ut.oda_bosaltma_tarihi
+                FROM is_plani t
+                LEFT JOIN oda_uretim_takip ut ON ut.oda_id = t.oda_id AND ut.donem_no = COALESCE(t.donem_no, 1)
+                WHERE t.oda_id = ?
+                ORDER BY t.durum, t.plan_tarihi ASC
+                """,
+                conn,
+                params=(kart_oda_id,)
+            )
+            conn.close()
+
+            def _parse_date(val):
+                if val and str(val) not in ('None', 'nan', ''):
+                    try:
+                        return date.fromisoformat(str(val)[:10])
+                    except Exception:
+                        pass
+                return None
+
+            def _asama_label(key):
+                return {
+                    'flash1_tarihi': '🍄 1. Flaş',
+                    'flash2_tarihi': '🍄 2. Flaş',
+                    'oda_bosaltma_tarihi': '🚪 Oda Boşaltma',
+                }.get(key, 'Özel Tarih')
+
+            if df_kart_plani.empty:
+                st.info("Bu oda için planlanmış iş yok.")
+            else:
+                kart_plan_rows = []
+                bugun = date.today()
+                for _, row in df_kart_plani.iterrows():
+                    ref_date = _parse_date(row.get(row['referans_asama'])) if row['referans_asama'] else None
+                    plan_date = _parse_date(row.get('plan_tarihi'))
+                    if row['referans_asama'] and ref_date is not None:
+                        try:
+                            plan_date = ref_date - timedelta(days=int(row.get('hatirlatma_gun_once') or 0))
+                        except Exception:
+                            pass
+                    if plan_date:
+                        kalan = (plan_date - bugun).days
+                        if row['durum'] != 'Tamamlandı':
+                            if kalan < 0:
+                                durum = f"🔴 {abs(kalan)} gün gecikti"
+                            elif kalan == 0:
+                                durum = "🟡 Bugün"
+                            else:
+                                durum = f"🟢 {kalan} gün kaldı"
+                        else:
+                            durum = "✅ Tamamlandı"
+                    else:
+                        durum = "⚠️ Tarih yok"
+                    kart_plan_rows.append({
+                        'İş': row['is_adi'],
+                        'Dönem': row['donem_no'] if row['donem_no'] else 'Genel',
+                        'Referans': _asama_label(row['referans_asama']),
+                        'Hatırlatma': plan_date.strftime('%d.%m.%Y') if plan_date else '',
+                        'Durum': durum,
+                        'Açıklama': row['aciklama'] or '',
+                    })
+                st.dataframe(pd.DataFrame(kart_plan_rows), use_container_width=True)
         else:
             st.info("Bu oda için üretim takvimi kaydı yok.")
 
@@ -2391,6 +2473,39 @@ elif menu == "🌱 Üretim Takvimi":
                 _th_bu, _ig_bu = _anlık_tahminler.get(alan, (None, False))
                 _tahmini_caption(_th_bu, _ig_bu)
                 st.markdown("")
+
+            _tum_vals = {**_mevcut_vals, **tarih_vals}
+            _tum_tahminler = _hesapla_tahminler(_tum_vals)
+
+            if _tum_tahminler.get("ekim_tarihi", (None, False))[0] is not None:
+                st.markdown("---")
+                st.markdown("#### 📅 Tüm Aşamaların Tahmini Tarihleri")
+
+                _row1 = st.columns(4)
+                _row2 = st.columns(4)
+                _grid_cols = _row1 + _row2
+
+                for _idx, (_alan, _lbl, _gun) in enumerate(_TH_STAGES):
+                    _th, _is_gercek = _tum_tahminler[_alan]
+                    with _grid_cols[_idx]:
+                        st.markdown(f"**{_lbl}**")
+                        if _th is None:
+                            st.markdown("—")
+                            continue
+
+                        st.markdown(f"📅 `{_th.strftime('%d.%m.%Y')}`")
+                        if _is_gercek:
+                            st.success("✅ Yapıldı")
+                        else:
+                            _kalan = (_th - _bugun).days
+                            if _kalan < 0:
+                                st.error(f"🔴 {abs(_kalan)} gün geçti")
+                            elif _kalan == 0:
+                                st.warning("🟡 Bugün!")
+                            elif _kalan <= 3:
+                                st.warning(f"🟡 {_kalan} gün kaldı")
+                            else:
+                                st.info(f"🟢 {_kalan} gün kaldı")
 
             aciklama_ut = st.text_area(
                 "Açıklama",
@@ -2772,6 +2887,221 @@ elif menu == "🌱 Üretim Takvimi":
                 st.caption("✅ Düz çubuk = Gerçekleşti | 🔲 Çizgili çubuk = Tahmini")
             else:
                 st.info("Gantt için Ekim tarihi girilmiş oda bulunamadı.")
+
+# İş Planı
+elif menu == "📅 İş Planı":
+    st.title("📅 İş Planı")
+    st.markdown("Seçili oda için yapılacak işleri tanımlayın, hatırlatma gününü belirleyin ve günü gelenleri takip edin.")
+
+    def _parse_date(val):
+        if val and str(val) not in ('None', 'nan', ''):
+            try:
+                return date.fromisoformat(str(val)[:10])
+            except Exception:
+                pass
+        return None
+
+    def _asama_label(key):
+        return {
+            'flash1_tarihi': '🍄 1. Flaş',
+            'flash2_tarihi': '🍄 2. Flaş',
+            'oda_bosaltma_tarihi': '🚪 Oda Boşaltma',
+        }.get(key, 'Özel Tarih')
+
+    def _calc_plan_date(stage_date, offset):
+        if stage_date is None:
+            return None
+        try:
+            return stage_date - timedelta(days=int(offset or 0))
+        except Exception:
+            return None
+
+    df_odalar_plani = _cached_odalar()
+    if df_odalar_plani.empty:
+        st.warning("⚠️ Önce oda eklemelisiniz. Oda Yönetimi menüsünden ekleyin.")
+    else:
+        tab1, tab2 = st.tabs(["📝 Plan Oluştur", "⏰ Günü Gelenler"])
+
+        with tab1:
+            st.subheader("Yeni İş Planı Kaydı")
+            col1, col2 = st.columns(2)
+            with col1:
+                pl_oda = st.selectbox("Oda Seçin", df_odalar_plani['oda_adi'].tolist(), key="plan_oda")
+                pl_oda_id = int(df_odalar_plani[df_odalar_plani['oda_adi'] == pl_oda]['id'].values[0])
+            with col2:
+                conn = get_db_connection()
+                df_donemler = _read_sql(
+                    "SELECT donem_no, ekim_tarihi, baski_tarihi, toprak_serim_tarihi, tirmik_tarihi, hava_verme_tarihi, flash1_tarihi, flash2_tarihi, oda_bosaltma_tarihi FROM oda_uretim_takip WHERE oda_id=? ORDER BY donem_no DESC",
+                    conn,
+                    params=(pl_oda_id,)
+                )
+                conn.close()
+                donem_options = ["Genel"]
+                if not df_donemler.empty:
+                    donem_options += [f"Dönem {int(x)}" for x in df_donemler['donem_no'].tolist()]
+                pl_donem = st.selectbox("Dönem", donem_options, key="plan_donem")
+
+            pl_is_adi = st.text_input("Yapılacak İş", key="plan_is_adi")
+            pl_referans = st.selectbox(
+                "Referans Aşama",
+                ["Özel Tarih", "🍄 1. Flaş", "🍄 2. Flaş", "🚪 Oda Boşaltma"],
+                key="plan_referans"
+            )
+            pl_offset = st.number_input("Kaç gün öncesinden hatırlatılacak?", min_value=0, max_value=30, value=5, step=1, key="plan_offset")
+
+            ref_key = {
+                'Özel Tarih': None,
+                '🍄 1. Flaş': 'flash1_tarihi',
+                '🍄 2. Flaş': 'flash2_tarihi',
+                '🚪 Oda Boşaltma': 'oda_bosaltma_tarihi',
+            }.get(pl_referans)
+
+            pl_stage_date = None
+            if ref_key and pl_donem != "Genel":
+                row = df_donemler[df_donemler['donem_no'] == int(pl_donem.split(' ')[1])]
+                if not row.empty:
+                    pl_stage_date = _parse_date(row.iloc[0][ref_key])
+            if ref_key and pl_stage_date:
+                pl_plan_date = _calc_plan_date(pl_stage_date, pl_offset)
+                st.success(f"Hatırlatma tarihi: {pl_plan_date.strftime('%d.%m.%Y')} (Referans: {_asama_label(ref_key)})")
+            else:
+                pl_plan_date = st.date_input("Hatırlatma Tarihi", value=date.today(), key="plan_tarih")
+                if ref_key and not pl_stage_date:
+                    st.warning("Seçilen referans evrenin tarihi bulunamadı; lütfen özel tarih girin veya üretim takvimini güncelleyin.")
+
+            pl_aciklama = st.text_area("Açıklama", key="plan_aciklama")
+
+            if st.button("💾 Planı Kaydet", type="primary", key="plan_save"):
+                if not pl_is_adi:
+                    st.error("İş adı boş bırakılamaz.")
+                else:
+                    donem_no = None if pl_donem == "Genel" else int(pl_donem.split(' ')[1])
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute(
+                        "INSERT INTO is_plani (oda_id, donem_no, is_adi, referans_asama, hatirlatma_gun_once, plan_tarihi, aciklama) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            pl_oda_id,
+                            donem_no,
+                            pl_is_adi,
+                            ref_key,
+                            int(pl_offset),
+                            str(pl_plan_date) if pl_plan_date else None,
+                            pl_aciklama.strip() or None,
+                        )
+                    )
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ İş planı kaydedildi.")
+                    _rerun()
+
+            st.markdown("---")
+            st.markdown("### Mevcut İş Planları")
+            conn = get_db_connection()
+            df_planlar = _read_sql(
+                """
+                SELECT t.*, o.oda_adi,
+                       ut.flash1_tarihi, ut.flash2_tarihi, ut.oda_bosaltma_tarihi
+                FROM is_plani t
+                JOIN odalar o ON t.oda_id = o.id
+                LEFT JOIN oda_uretim_takip ut ON ut.oda_id = t.oda_id AND ut.donem_no = COALESCE(t.donem_no, 1)
+                ORDER BY t.durum, t.plan_tarihi ASC
+                """,
+                conn
+            )
+            conn.close()
+            if df_planlar.empty:
+                st.info("Henüz planlanmış iş yok.")
+            else:
+                plan_rows = []
+                bugun = date.today()
+                for _, row in df_planlar.iterrows():
+                    ref_date = _parse_date(row.get(row['referans_asama'])) if row['referans_asama'] else None
+                    plan_date = _parse_date(row.get('plan_tarihi'))
+                    if row['referans_asama'] and ref_date is not None:
+                        plan_date = _calc_plan_date(ref_date, row.get('hatirlatma_gun_once') or 0)
+                    status = str(row.get('durum') or 'Beklemede')
+                    if plan_date:
+                        kalan = (plan_date - bugun).days
+                        if status != 'Tamamlandı':
+                            if kalan < 0:
+                                durum = f"🔴 {abs(kalan)} gün gecikti"
+                            elif kalan == 0:
+                                durum = "🟡 Bugün"
+                            else:
+                                durum = f"🟢 {kalan} gün kaldı"
+                        else:
+                            durum = "✅ Tamamlandı"
+                    else:
+                        durum = "⚠️ Tarih yok"
+
+                    plan_rows.append({
+                        'Oda': row['oda_adi'],
+                        'Dönem': row['donem_no'] if row['donem_no'] else 'Genel',
+                        'İş': row['is_adi'],
+                        'Referans': _asama_label(row['referans_asama']),
+                        'Hatırlatma': plan_date.strftime('%d.%m.%Y') if plan_date else '',
+                        'Önceki Gün': int(row.get('hatirlatma_gun_once') or 0),
+                        'Durum': durum,
+                        'Açıklama': row['aciklama'] or '',
+                    })
+                st.dataframe(pd.DataFrame(plan_rows), use_container_width=True)
+
+        with tab2:
+            st.subheader("Günü Gelen Hatırlatmalar")
+            conn = get_db_connection()
+            df_planlar = _read_sql(
+                """
+                SELECT t.*, o.oda_adi,
+                       ut.flash1_tarihi, ut.flash2_tarihi, ut.oda_bosaltma_tarihi
+                FROM is_plani t
+                JOIN odalar o ON t.oda_id = o.id
+                LEFT JOIN oda_uretim_takip ut ON ut.oda_id = t.oda_id AND ut.donem_no = COALESCE(t.donem_no, 1)
+                WHERE t.durum != 'Tamamlandı'
+                ORDER BY t.plan_tarihi ASC
+                """,
+                conn
+            )
+            conn.close()
+            if df_planlar.empty:
+                st.info("Bugün için hatırlatılacak kayıt yok.")
+            else:
+                bugun = date.today()
+                due_rows = []
+                for _, row in df_planlar.iterrows():
+                    ref_date = _parse_date(row.get(row['referans_asama'])) if row['referans_asama'] else None
+                    plan_date = _parse_date(row.get('plan_tarihi'))
+                    if row['referans_asama'] and ref_date is not None:
+                        plan_date = _calc_plan_date(ref_date, row.get('hatirlatma_gun_once') or 0)
+                    if not plan_date:
+                        continue
+                    if plan_date <= bugun:
+                        due_rows.append((row, plan_date, ref_date))
+
+                if not due_rows:
+                    st.info("Bugün veya geçmiş hatırlatma kaydı bulunamadı.")
+                else:
+                    for row, plan_date, ref_date in due_rows:
+                        kalan = (plan_date - bugun).days
+                        durum = "Bugün" if kalan == 0 else f"{abs(kalan)} gün {'geçti' if kalan < 0 else 'kaldı'}"
+                        title = f"{row['oda_adi']} | {row['is_adi']} — {plan_date.strftime('%d.%m.%Y')} ({durum})"
+                        with st.expander(title, expanded=False):
+                            st.markdown(f"**Dönem:** {row['donem_no'] if row['donem_no'] else 'Genel'}")
+                            st.markdown(f"**Referans:** {_asama_label(row['referans_asama'])}")
+                            st.markdown(f"**Hatırlatma Tarihi:** {plan_date.strftime('%d.%m.%Y')}")
+                            if ref_date:
+                                st.markdown(f"**Referans Tarihi:** {ref_date.strftime('%d.%m.%Y')}")
+                            st.markdown(f"**Hatırlatma Öncesi:** {int(row.get('hatirlatma_gun_once') or 0)} gün")
+                            if row.get('aciklama'):
+                                st.markdown(f"**Açıklama:** {row['aciklama']}")
+                            if st.button("✅ Tamamlandı olarak işaretle", key=f"done_{row['id']}"):
+                                conn = get_db_connection()
+                                c = conn.cursor()
+                                c.execute("UPDATE is_plani SET durum='Tamamlandı', tamamlanma_tarihi=? WHERE id=?", (str(bugun), int(row['id'])))
+                                conn.commit()
+                                conn.close()
+                                st.success("Görev tamamlandı olarak işaretlendi.")
+                                _rerun()
 
 # Veri Yedekleme
 elif menu == "📥 Veri Yedekleme":
