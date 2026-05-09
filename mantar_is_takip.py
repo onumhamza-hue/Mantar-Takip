@@ -3468,7 +3468,7 @@ elif menu == "📅 İş Planı":
                     st.warning("Uygulanacak profil yoktur. Önce profil oluşturun.")
                 else:
                     prof_secim = st.selectbox("Profil Seçin", df_profiler['profil_adi'].tolist(), key="prof_sec")
-                    prof_id = df_profiler[df_profiler['profil_adi'] == prof_secim]['id'].values[0]
+                    prof_id = int(df_profiler[df_profiler['profil_adi'] == prof_secim]['id'].values[0])
 
                     st.markdown("**Profilin İşleri:**")
                     conn = get_db_connection()
