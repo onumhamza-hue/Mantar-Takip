@@ -171,7 +171,12 @@ def _read_sql(sql, conn, params=None):
             try:
                 cur.execute(pg_sql, params) if params is not None else cur.execute(pg_sql)
             except Exception as e:
-                if 'undefined_table' in str(e).lower() and 'is_plani' in pg_sql.lower():
+                error_text = f"{e}".lower() + " " + repr(e).lower()
+                if 'is_plani' in pg_sql.lower() and (
+                    'undefinedtable' in error_text or
+                    ('relation "is_plani"' in error_text and 'does not exist' in error_text) or
+                    'does not exist' in error_text and 'is_plani' in error_text
+                ):
                     # Eğer tablo henüz yaratılmamışsa, yaratıp sorguyu yeniden çalıştır
                     cur.execute('''CREATE TABLE IF NOT EXISTS is_plani
                                    (id SERIAL PRIMARY KEY,
