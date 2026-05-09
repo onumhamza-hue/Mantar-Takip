@@ -3473,32 +3473,47 @@ elif menu == "📅 İş Planı":
                     st.markdown("**Profilin İşleri:**")
                     conn = get_db_connection()
                     
-                    # FAILSAFE: Ensure table exists before querying
+                    # NUCLEAR FIX: Ultra-safe table creation and query
                     try:
-                        # First ensure parent table exists
-                        conn.cursor().execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
-                                                     (id SERIAL PRIMARY KEY,
-                                                      profil_adi TEXT NOT NULL UNIQUE,
-                                                      aciklama TEXT,
-                                                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                        # Force table creation with raw connection
+                        raw_conn = conn._conn if hasattr(conn, '_conn') else conn
+                        raw_cur = raw_conn.cursor()
                         
-                        # Then ensure child table exists
-                        conn.cursor().execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
-                                                     (id SERIAL PRIMARY KEY,
-                                                      profil_id INTEGER NOT NULL,
-                                                      is_adi TEXT NOT NULL,
-                                                      referans_asama TEXT,
-                                                      hatirlatma_gun_once INTEGER DEFAULT 0,
-                                                      siralama INTEGER DEFAULT 0,
-                                                      FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
-                        if IS_CLOUD:
-                            conn._conn.commit()
-                        else:
-                            conn.commit()
-                    except Exception:
-                        pass  # Tables might already exist, that's fine
+                        # Create parent table first
+                        raw_cur.execute("""
+                            CREATE TABLE IF NOT EXISTS is_plani_profili (
+                                id SERIAL PRIMARY KEY,
+                                profil_adi TEXT NOT NULL UNIQUE,
+                                aciklama TEXT,
+                                olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )
+                        """)
+                        
+                        # Create child table second
+                        raw_cur.execute("""
+                            CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri (
+                                id SERIAL PRIMARY KEY,
+                                profil_id INTEGER NOT NULL,
+                                is_adi TEXT NOT NULL,
+                                referans_asama TEXT,
+                                hatirlatma_gun_once INTEGER DEFAULT 0,
+                                siralama INTEGER DEFAULT 0,
+                                FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id)
+                            )
+                        """)
+                        
+                        raw_conn.commit()
+                        raw_cur.close()
+                        
+                        # Now try the query with fresh connection
+                        fresh_conn = get_db_connection()
+                        df_isahleri = _read_sql("SELECT * FROM is_plani_profil_isahleri WHERE profil_id=? ORDER BY siralama", fresh_conn, params=(prof_id,))
+                        fresh_conn.close()
+                        
+                    except Exception as e:
+                        st.error(f"İş Planı Profili hatası: {e}")
+                        df_isahleri = pd.DataFrame()
                     
-                    df_isahleri = _read_sql("SELECT * FROM is_plani_profil_isahleri WHERE profil_id=? ORDER BY siralama", conn, params=(prof_id,))
                     conn.close()
 
                     for _, iş_row in df_isahleri.iterrows():
