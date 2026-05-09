@@ -3299,21 +3299,25 @@ elif menu == "📅 İş Planı":
                             }
                     
                     # Hatırlatma tarihini hesapla - Üretim takvimi tabanlı
-                    if row['referans_asama'] and ref_date is not None:
+                    if row['referans_asama']:
                         # Önce üretim takviminden gerçek tarihi al
                         gercek_ref_date = uretim_tarihleri.get(row['referans_asama'] + '_tarihi')
                         if gercek_ref_date:
+                            # Üretim takviminde gerçek tarih var - buna göre hesapla
                             plan_date = _calc_plan_date(gercek_ref_date, hatirlatma_gun_once)
                             hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])} (Üretim Takvimi)"
-                        else:
-                            # Üretim takviminde yoksa, eski yöntemle devam et
+                        elif ref_date is not None:
+                            # Üretim takviminde yok ama ref_date var - bunu kullan
                             plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
                             hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])} (Standart)"
+                        else:
+                            # Referans var ama hiçbir tarih yok - bugünden tahmini
+                            plan_date = bugun + timedelta(days=hatirlatma_gun_once)
+                            hatirlatma_tipi = f"Tahmini: {_asama_label(row['referans_asama'])} (Referans Tarihi Yok)"
                     elif plan_date:
                         hatirlatma_tipi = "Manuel Tarih"
                     else:
-                        # Tahmini tarih hesapla (bugünden + hatırlatma_gun_once)
-                        bugun = date.today()
+                        # Referans yok - bugünden tahmini
                         plan_date = bugun + timedelta(days=hatirlatma_gun_once)
                         hatirlatma_tipi = f"Tahmini ({hatirlatma_gun_once} gün sonrası)"
                     
