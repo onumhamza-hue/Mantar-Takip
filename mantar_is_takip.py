@@ -681,6 +681,27 @@ def init_database():
         c.executemany("INSERT INTO gider_kalemleri (kalem_adi, birim_fiyat, aciklama) VALUES (?, ?, ?)", 
                       varsayilan_giderler)
     
+    # Garanti: İş Planı Profili tablolarını oluştur (Cloud'da sorun olmaması için)
+    try:
+        # Önce parent table
+        c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
+                     (id {id_type},
+                      profil_adi TEXT NOT NULL UNIQUE,
+                      aciklama TEXT,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # Sonra child table
+        c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
+                     (id {id_type},
+                      profil_id INTEGER NOT NULL,
+                      is_adi TEXT NOT NULL,
+                      referans_asama TEXT,
+                      hatirlatma_gun_once INTEGER DEFAULT 0,
+                      siralama INTEGER DEFAULT 0,
+                      FOREIGN KEY (profil_id) REFERENCES is_plani_profili(id))''')
+    except Exception as e:
+        st.error(f"İş Planı Profili tabloları oluşturulamadı: {e}")
+    
     if not IS_CLOUD:
         conn.commit()
     conn.close()
