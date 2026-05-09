@@ -3287,14 +3287,14 @@ elif menu == "📅 İş Planı":
                         if not df_uretim.empty:
                             uretim_row = df_uretim.iloc[0]
                             uretim_tarihleri = {
-                                'ekim_tarihi': _parse_ut_date(uretim_row.get('ekim_tarihi')),
-                                'baski_tarihi': _parse_ut_date(uretim_row.get('baski_tarihi')),
-                                'toprak_serim_tarihi': _parse_ut_date(uretim_row.get('toprak_serim_tarihi')),
-                                'tirmik_tarihi': _parse_ut_date(uretim_row.get('tirmik_tarihi')),
-                                'hava_verme_tarihi': _parse_ut_date(uretim_row.get('hava_verme_tarihi')),
-                                'flash1_tarihi': _parse_ut_date(uretim_row.get('flash1_tarihi')),
-                                'flash2_tarihi': _parse_ut_date(uretim_row.get('flash2_tarihi')),
-                                'oda_bosaltma_tarihi': _parse_ut_date(uretim_row.get('oda_bosaltma_tarihi')),
+                                'ekim_tarihi': _parse_date(uretim_row.get('ekim_tarihi')),
+                                'baski_tarihi': _parse_date(uretim_row.get('baski_tarihi')),
+                                'toprak_serim_tarihi': _parse_date(uretim_row.get('toprak_serim_tarihi')),
+                                'tirmik_tarihi': _parse_date(uretim_row.get('tirmik_tarihi')),
+                                'hava_verme_tarihi': _parse_date(uretim_row.get('hava_verme_tarihi')),
+                                'flash1_tarihi': _parse_date(uretim_row.get('flash1_tarihi')),
+                                'flash2_tarihi': _parse_date(uretim_row.get('flash2_tarihi')),
+                                'oda_bosaltma_tarihi': _parse_date(uretim_row.get('oda_bosaltma_tarihi')),
                             }
                     
                     # Hatırlatma tarihini hesapla - Üretim takvimi tabanlı
