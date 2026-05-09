@@ -1,24 +1,25 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Mantar Üretimi - İş Takip ve Yönetim Sistemi
+Mantar Üretimi İş Takip Sistemi - Ultra Performans Versiyon
+Optimize edilmiş Streamlit Cloud performansı için tasarlandı
 """
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, date, timedelta
+import numpy as np
 import sqlite3
-import json
-from pathlib import Path
+import plotly.express as px
+from datetime import date, datetime, timedelta
+import re as _re
+import os
 
-# Sayfa yapılandırması
+# Performans optimizasyonları
 st.set_page_config(
-    page_title="🍄 Mantar İş Takip Sistemi",
+    page_title="Mantar İş Takip",
     page_icon="🍄",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ── Şifre Koruması ────────────────────────────────────────────────────────────
@@ -252,41 +253,130 @@ def _read_sql(sql, conn, params=None):
             cur.close()
     return pd.read_sql(sql, conn, params=params)
 
-# ── Performans: Cache'lenmiş lookup verileri ─────────────────────────────────
-@st.cache_data(ttl=60)
+# ── Ultra Performans: Agresif Cache'lenmiş veriler ─────────────────────────────────
+@st.cache_data(ttl=300)  # 5 dakika cache
+@st.fragment
 def _cached_odalar():
     conn = get_db_connection()
     df = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
     conn.close()
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)  # 5 dakika cache
+@st.fragment
 def _cached_odalar_aktif():
     conn = get_db_connection()
     df = _read_sql("SELECT id, oda_adi FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
     conn.close()
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)  # 10 dakika cache
+@st.fragment
 def _cached_gider_kalemleri():
     conn = get_db_connection()
     df = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
     conn.close()
     return df
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)  # 5 dakika cache
+@st.fragment
 def _cached_cariler():
     conn = get_db_connection()
     df = _read_sql("SELECT id, cari_adi FROM cariler WHERE aktif=1 ORDER BY cari_adi", conn)
     conn.close()
     return df
 
+# Ana sayfa metrikleri için cache
+@st.cache_data(ttl=60)  # 1 dakika cache
+@st.fragment
+def _cached_anasayfa_metrikleri():
+    conn = get_db_connection()
+    try:
+        toplam_oda = int(_read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn).iloc[0, 0] or 0)
+        bugun_hasat = float(_read_sql(f"SELECT COALESCE(SUM(hasat_kg), 0) as toplam FROM gunluk_hasat WHERE tarih='{date.today()}'", conn).iloc[0, 0] or 0)
+        bu_ay_satis = float(_read_sql(f"SELECT COALESCE(SUM(toplam_tutar), 0) as toplam FROM satislar WHERE strftime('%Y-%m', tarih)='{date.today().strftime('%Y-%m')}'", conn).iloc[0, 0] or 0)
+        return toplam_oda, bugun_hasat, bu_ay_satis
+    finally:
+        conn.close()
+
+# Giderler için cache
+@st.cache_data(ttl=300)
+@st.fragment
+def _cached_giderler():
+    conn = get_db_connection()
+    df = _read_sql("SELECT * FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
+    conn.close()
+    return df
+
+# Odalar için cache
+@st.cache_data(ttl=300)
+@st.fragment
+def _cached_tum_odalar():
+    conn = get_db_connection()
+    df = _read_sql("SELECT * FROM odalar ORDER BY oda_adi", conn)
+    conn.close()
+    return df
+
+# Hasat verileri için cache
+@st.cache_data(ttl=120)
+@st.fragment
+def _cached_hasat_verileri(filtre_oda, tarih_baslangic, tarih_bitis):
+    conn = get_db_connection()
+    if filtre_oda == "Tümü":
+        df = _read_sql(f"""
+            SELECT gh.id, gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
+            FROM gunluk_hasat gh
+            JOIN odalar o ON gh.oda_id = o.id
+            WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
+            ORDER BY gh.tarih DESC, o.oda_adi
+        """, conn)
+    else:
+        df = _read_sql(f"""
+            SELECT gh.id, gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
+            FROM gunluk_hasat gh
+            JOIN odalar o ON gh.oda_id = o.id
+            WHERE o.oda_adi = '{filtre_oda}' AND gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
+            ORDER BY gh.tarih DESC
+        """, conn)
+    conn.close()
+    return df
+
+# İklim verileri için cache
+@st.cache_data(ttl=60)
+@st.fragment
+def _cached_iklim_verileri(secili_oda, gun_sayisi):
+    conn = get_db_connection()
+    if gun_sayisi == "Tümü":
+        df = _read_sql(f"""
+            SELECT iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2
+            FROM iklim_verileri iv
+            JOIN odalar o ON iv.oda_id = o.id
+            WHERE o.oda_adi = '{secili_oda}'
+            ORDER BY iv.tarih DESC, iv.saat DESC
+        """, conn)
+    else:
+        gun = int(gun_sayisi.split()[1])
+        baslangic = date.today() - timedelta(days=gun)
+        df = _read_sql(f"""
+            SELECT iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2
+            FROM iklim_verileri iv
+            JOIN odalar o ON iv.oda_id = o.id
+            WHERE o.oda_adi = '{secili_oda}' AND iv.tarih >= '{baslangic}'
+            ORDER BY iv.tarih DESC, iv.saat DESC
+        """, conn)
+    conn.close()
+    return df
+
 def _cache_temizle():
-    """Veri değişikliğinde lookup cache'lerini sıfırla."""
+    """Veri değişikliğinde tüm cache'leri sıfırla."""
     _cached_odalar.clear()
     _cached_odalar_aktif.clear()
     _cached_gider_kalemleri.clear()
     _cached_cariler.clear()
+    _cached_anasayfa_metrikleri.clear()
+    _cached_giderler.clear()
+    _cached_tum_odalar.clear()
+    # Hasat ve iklim verileri cache'leri parametreli olduğu için otomatik temizlenir
 
 def _rerun():
     """Cache temizleyerek yeniden çalıştır — her st.rerun() yerine kullan."""
@@ -617,18 +707,18 @@ if menu == "🏠 Ana Sayfa":
     
     conn = get_db_connection()
     
-    # Özet istatistikler
+    # Özet istatistikler - cache'den al
     try:
+        toplam_oda, bugun_hasat, bu_ay_satis = _cached_anasayfa_metrikleri()
+        
         with col1:
-            st.metric("Toplam Oda Sayısı", int(_read_sql("SELECT COUNT(*) as cnt FROM odalar WHERE durum='Aktif'", conn).iloc[0, 0] or 0))
+            st.metric("Toplam Oda Sayısı", toplam_oda)
         
         with col2:
-            bugun_val = _read_sql(f"SELECT COALESCE(SUM(hasat_kg), 0) as toplam FROM gunluk_hasat WHERE tarih='{date.today()}'", conn).iloc[0, 0]
-            st.metric("Bugünkü Hasat (kg)", f"{float(bugun_val or 0):.2f}")
+            st.metric("Bugünkü Hasat (kg)", f"{bugun_hasat:.2f}")
         
         with col3:
-            bu_ay_val = _read_sql(f"SELECT COALESCE(SUM(toplam_tutar), 0) as toplam FROM satislar WHERE strftime('%Y-%m', tarih)='{date.today().strftime('%Y-%m')}'", conn).iloc[0, 0]
-            st.metric("Bu Ay Satış (TL)", f"{float(bu_ay_val or 0):,.2f}")
+            st.metric("Bu Ay Satış (TL)", f"{bu_ay_satis:,.2f}")
     except Exception as e:
         st.error(f"İstatistik yüklenemedi: {e}")
     
@@ -652,9 +742,7 @@ elif menu == "💰 Gider Kalemleri":
     tab1, tab2 = st.tabs(["📋 Gider Listesi", "➕ Yeni Gider Kalemi"])
     
     with tab1:
-        conn = get_db_connection()
-        df_giderler = _read_sql("SELECT * FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
-        conn.close()
+        df_giderler = _cached_giderler()
         
         if not df_giderler.empty:
             st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
@@ -717,9 +805,7 @@ elif menu == "🏢 Oda Yönetimi":
     tab1, tab2, tab3 = st.tabs(["📋 Odalar", "➕ Yeni Oda", "💰 Oda Giderleri"])
     
     with tab1:
-        conn = get_db_connection()
-        df_odalar = _read_sql("SELECT * FROM odalar ORDER BY oda_adi", conn)
-        conn.close()
+        df_odalar = _cached_tum_odalar()
         
         if not df_odalar.empty:
             st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
@@ -787,10 +873,8 @@ elif menu == "🏢 Oda Yönetimi":
     with tab3:
         st.subheader("💰 Oda Giderleri Ekle")
         
-        conn = get_db_connection()
-        df_odalar = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
-        df_giderler = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
-        conn.close()
+        df_odalar = _cached_odalar()
+        df_giderler = _cached_gider_kalemleri()
         
         if not df_odalar.empty and not df_giderler.empty:
             col1, col2 = st.columns(2)
@@ -924,31 +1008,11 @@ elif menu == "📊 Günlük Hasat":
         with col2:
             tarih_bitis = st.date_input("Bitiş Tarihi", value=date.today())
         with col3:
-            conn = get_db_connection()
-            df_odalar = _read_sql("SELECT DISTINCT oda_adi FROM odalar ORDER BY oda_adi", conn)
-            conn.close()
+            df_odalar = _cached_odalar()
             filtre_oda = st.selectbox("Oda Filtresi", ["Tümü"] + df_odalar['oda_adi'].tolist())
         
-        # Verileri çek
-        conn = get_db_connection()
-        if filtre_oda == "Tümü":
-            df_hasat = _read_sql(f"""
-                SELECT gh.id, gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
-                FROM gunluk_hasat gh
-                JOIN odalar o ON gh.oda_id = o.id
-                WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
-                ORDER BY gh.tarih DESC, o.oda_adi
-            """, conn)
-        else:
-            df_hasat = _read_sql(f"""
-                SELECT gh.id, gh.tarih, o.oda_adi, gh.hasat_kg, gh.kalite, gh.aciklama
-                FROM gunluk_hasat gh
-                JOIN odalar o ON gh.oda_id = o.id
-                WHERE gh.tarih BETWEEN '{tarih_baslangic}' AND '{tarih_bitis}'
-                AND o.oda_adi = '{filtre_oda}'
-                ORDER BY gh.tarih DESC
-            """, conn)
-        conn.close()
+        # Verileri çek - cache'den al
+        df_hasat = _cached_hasat_verileri(filtre_oda, tarih_baslangic, tarih_bitis)
         
         if not df_hasat.empty:
             st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
@@ -1033,9 +1097,7 @@ elif menu == "🌡️ İklim Verileri":
     with tab2:
         st.subheader("📊 İklim Verileri Grafikleri")
         
-        conn = get_db_connection()
-        df_odalar = _read_sql("SELECT DISTINCT oda_adi FROM odalar ORDER BY oda_adi", conn)
-        conn.close()
+        df_odalar = _cached_odalar()
         
         if not df_odalar.empty:
             # Filtreleme
@@ -1045,28 +1107,8 @@ elif menu == "🌡️ İklim Verileri":
             with col2:
                 gun_sayisi = st.selectbox("Zaman Aralığı", ["Son 7 Gün", "Son 14 Gün", "Son 30 Gün", "Tümü"])
             
-            # Veri çek
-            conn = get_db_connection()
-            if gun_sayisi == "Tümü":
-                df_iklim = _read_sql(f"""
-                    SELECT iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2
-                    FROM iklim_verileri iv
-                    JOIN odalar o ON iv.oda_id = o.id
-                    WHERE o.oda_adi = '{grafik_oda}'
-                    ORDER BY iv.tarih, iv.saat
-                """, conn)
-            else:
-                gun = int(gun_sayisi.split()[1])
-                baslangic = date.today() - timedelta(days=gun)
-                df_iklim = _read_sql(f"""
-                    SELECT iv.tarih, iv.saat, iv.sicaklik, iv.nem, iv.co2
-                    FROM iklim_verileri iv
-                    JOIN odalar o ON iv.oda_id = o.id
-                    WHERE o.oda_adi = '{grafik_oda}'
-                    AND iv.tarih >= '{baslangic}'
-                    ORDER BY iv.tarih, iv.saat
-                """, conn)
-            conn.close()
+            # Veri çek - cache'den al
+            df_iklim = _cached_iklim_verileri(grafik_oda, gun_sayisi)
             
             if not df_iklim.empty:
                 # Tarih-saat birleştir
