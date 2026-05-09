@@ -3299,21 +3299,23 @@ elif menu == "📅 İş Planı":
                             }
                     
                     # Hatırlatma tarihini hesapla - Üretim takvimi tabanlı
-                    if row['referans_asama']:
+                    referans_asama_val = row.get('referans_asama')
+                    if referans_asama_val and pd.notna(referans_asama_val):
+                        referans_asama_str = str(referans_asama_val)
                         # Önce üretim takviminden gerçek tarihi al
-                        gercek_ref_date = uretim_tarihleri.get(row['referans_asama'] + '_tarihi')
+                        gercek_ref_date = uretim_tarihleri.get(referans_asama_str + '_tarihi')
                         if gercek_ref_date:
                             # Üretim takviminde gerçek tarih var - buna göre hesapla
                             plan_date = _calc_plan_date(gercek_ref_date, hatirlatma_gun_once)
-                            hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])} (Üretim Takvimi)"
+                            hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Üretim Takvimi)"
                         elif ref_date is not None:
                             # Üretim takviminde yok ama ref_date var - bunu kullan
                             plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
-                            hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])} (Standart)"
+                            hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Standart)"
                         else:
                             # Referans var ama hiçbir tarih yok - bugünden tahmini
                             plan_date = bugun + timedelta(days=hatirlatma_gun_once)
-                            hatirlatma_tipi = f"Tahmini: {_asama_label(row['referans_asama'])} (Referans Tarihi Yok)"
+                            hatirlatma_tipi = f"Tahmini: {_asama_label(referans_asama_str)} (Referans Tarihi Yok)"
                     elif plan_date:
                         hatirlatma_tipi = "Manuel Tarih"
                     else:
