@@ -685,14 +685,14 @@ def init_database():
     try:
         # Önce parent table
         c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profili
-                     (id {id_type},
+                     (id SERIAL PRIMARY KEY,
                       profil_adi TEXT NOT NULL UNIQUE,
                       aciklama TEXT,
                       olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
         # Sonra child table
         c.execute('''CREATE TABLE IF NOT EXISTS is_plani_profil_isahleri
-                     (id {id_type},
+                     (id SERIAL PRIMARY KEY,
                       profil_id INTEGER NOT NULL,
                       is_adi TEXT NOT NULL,
                       referans_asama TEXT,
@@ -3505,7 +3505,7 @@ elif menu == "📅 İş Planı":
                         raw_conn.commit()
                         raw_cur.close()
                         
-                        # Now try the query with fresh connection
+                        # Now try to query with fresh connection
                         fresh_conn = get_db_connection()
                         df_isahleri = _read_sql("SELECT * FROM is_plani_profil_isahleri WHERE profil_id=? ORDER BY siralama", fresh_conn, params=(prof_id,))
                         fresh_conn.close()
