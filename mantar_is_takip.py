@@ -3263,10 +3263,23 @@ elif menu == "📅 İş Planı":
                 plan_rows = []
                 bugun = date.today()
                 for _, row in df_planlar.iterrows():
+                    # Enhanced hatırlatma tarihleri hesaplama ve gösterimi
                     ref_date = _parse_date(row.get(row['referans_asama'])) if row['referans_asama'] else None
                     plan_date = _parse_date(row.get('plan_tarihi'))
+                    hatirlatma_gun_once = int(row.get('hatirlatma_gun_once') or 0)
+                    
+                    # Hatırlatma tarihini hesapla
                     if row['referans_asama'] and ref_date is not None:
-                        plan_date = _calc_plan_date(ref_date, row.get('hatirlatma_gun_once') or 0)
+                        plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
+                        hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])}"
+                    elif plan_date:
+                        hatirlatma_tipi = "Manuel Tarih"
+                    else:
+                        # Tahmini tarih hesapla (bugünden + hatırlatma_gun_once)
+                        bugun = date.today()
+                        plan_date = bugun + timedelta(days=hatirlatma_gun_once)
+                        hatirlatma_tipi = f"Tahmini ({hatirlatma_gun_once} gün sonrası)"
+                    
                     status = str(row.get('durum') or 'Beklemede')
                     if plan_date:
                         kalan = (plan_date - bugun).days
@@ -3287,8 +3300,9 @@ elif menu == "📅 İş Planı":
                         'Dönem': row['donem_no'] if row['donem_no'] else 'Genel',
                         'İş': row['is_adi'],
                         'Referans': _asama_label(row['referans_asama']),
-                        'Hatırlatma': plan_date.strftime('%d.%m.%Y') if plan_date else '',
-                        'Önceki Gün': int(row.get('hatirlatma_gun_once') or 0),
+                        'Hatırlatma Tarihi': plan_date.strftime('%d.%m.%Y') if plan_date else '',
+                        'Hatırlatma Tipi': hatirlatma_tipi,
+                        'Önceki Gün': hatirlatma_gun_once,
                         'Durum': durum,
                         'Açıklama': row['aciklama'] or '',
                     })
