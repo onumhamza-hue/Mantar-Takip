@@ -3263,15 +3263,51 @@ elif menu == "📅 İş Planı":
                 plan_rows = []
                 bugun = date.today()
                 for _, row in df_planlar.iterrows():
-                    # Enhanced hatırlatma tarihleri hesaplama ve gösterimi
+                    # Enhanced hatırlatma tarihleri hesaplama ve gösterimi - Üretim Takvimi ile Koordine
                     ref_date = _parse_date(row.get(row['referans_asama'])) if row['referans_asama'] else None
                     plan_date = _parse_date(row.get('plan_tarihi'))
                     hatirlatma_gun_once = int(row.get('hatirlatma_gun_once') or 0)
                     
-                    # Hatırlatma tarihini hesapla
+                    # Üretim takviminden gerçek evre tarihlerini al
+                    oda_id = row.get('oda_id')
+                    donem_no = row.get('donem_no') or 1
+                    uretim_tarihleri = {}
+                    
+                    if oda_id:
+                        conn_uretim = get_db_connection()
+                        df_uretim = _read_sql("""
+                            SELECT flash1_tarihi, flash2_tarihi, oda_bosaltma_tarihi,
+                                   ekim_tarihi, baski_tarihi, toprak_serim_tarihi,
+                                   tirmik_tarihi, hava_verme_tarihi
+                            FROM oda_uretim_takip
+                            WHERE oda_id = ? AND donem_no = ?
+                        """, conn_uretim, params=(oda_id, donem_no))
+                        conn_uretim.close()
+                        
+                        if not df_uretim.empty:
+                            uretim_row = df_uretim.iloc[0]
+                            uretim_tarihleri = {
+                                'ekim_tarihi': _parse_ut_date(uretim_row.get('ekim_tarihi')),
+                                'baski_tarihi': _parse_ut_date(uretim_row.get('baski_tarihi')),
+                                'toprak_serim_tarihi': _parse_ut_date(uretim_row.get('toprak_serim_tarihi')),
+                                'tirmik_tarihi': _parse_ut_date(uretim_row.get('tirmik_tarihi')),
+                                'hava_verme_tarihi': _parse_ut_date(uretim_row.get('hava_verme_tarihi')),
+                                'flash1_tarihi': _parse_ut_date(uretim_row.get('flash1_tarihi')),
+                                'flash2_tarihi': _parse_ut_date(uretim_row.get('flash2_tarihi')),
+                                'oda_bosaltma_tarihi': _parse_ut_date(uretim_row.get('oda_bosaltma_tarihi')),
+                            }
+                    
+                    # Hatırlatma tarihini hesapla - Üretim takvimi tabanlı
                     if row['referans_asama'] and ref_date is not None:
-                        plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
-                        hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])}"
+                        # Önce üretim takviminden gerçek tarihi al
+                        gercek_ref_date = uretim_tarihleri.get(row['referans_asama'] + '_tarihi')
+                        if gercek_ref_date:
+                            plan_date = _calc_plan_date(gercek_ref_date, hatirlatma_gun_once)
+                            hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])} (Üretim Takvimi)"
+                        else:
+                            # Üretim takviminde yoksa, eski yöntemle devam et
+                            plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
+                            hatirlatma_tipi = f"Referans: {_asama_label(row['referans_asama'])} (Standart)"
                     elif plan_date:
                         hatirlatma_tipi = "Manuel Tarih"
                     else:
