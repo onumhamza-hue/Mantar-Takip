@@ -3377,29 +3377,33 @@ elif menu == "📅 İş Planı":
                     referans_asama_val = row.get('referans_asama')
                     if referans_asama_val and pd.notna(referans_asama_val):
                         referans_asama_str = str(referans_asama_val)
-                        referans_evre_key = referans_asama_str + '_tarihi'
+                        # referans_asama zaten "_tarihi" ile bitiyorsa, eklemeye gerek yok
+                        if referans_asama_str.endswith('_tarihi'):
+                            referans_evre_key = referans_asama_str
+                        else:
+                            referans_evre_key = referans_asama_str + '_tarihi'
                         
                         # 1. Önce üretim takviminden gerçek tarihi al
                         gercek_ref_date = uretim_tarihleri.get(referans_evre_key)
                         if gercek_ref_date:
                             # Üretim takviminde gerçek tarih var - buna göre hesapla
                             plan_date = _calc_plan_date(gercek_ref_date, hatirlatma_gun_once)
-                            hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Üretim Takvimi)"
+                            hatirlatma_tipi = f"Referans: {_asama_label(referans_evre_key)} (Üretim Takvimi)"
                         else:
                             # 2. Gerçek tarih yok, tahmini tarihi kontrol et
                             tahmini_ref_date = tahmini_tarihler.get(referans_evre_key)
                             if tahmini_ref_date:
                                 # Tahmini tarih var - buna göre hesapla
                                 plan_date = _calc_plan_date(tahmini_ref_date, hatirlatma_gun_once)
-                                hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Tahmini)"
+                                hatirlatma_tipi = f"Referans: {_asama_label(referans_evre_key)} (Tahmini)"
                             elif ref_date is not None:
                                 # 3. Tahmini tarih yok ama ref_date var - bunu kullan
                                 plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
-                                hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Standart)"
+                                hatirlatma_tipi = f"Referans: {_asama_label(referans_evre_key)} (Standart)"
                             else:
                                 # 4. Referans var ama hiçbir tarih yok - bugünden tahmini
                                 plan_date = bugun + timedelta(days=hatirlatma_gun_once)
-                                hatirlatma_tipi = f"Tahmini: {_asama_label(referans_asama_str)} (Referans Tarihi Yok)"
+                                hatirlatma_tipi = f"Tahmini: {_asama_label(referans_evre_key)} (Referans Tarihi Yok)"
                     elif plan_date:
                         hatirlatma_tipi = "Manuel Tarih"
                     else:
