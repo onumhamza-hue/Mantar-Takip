@@ -22,6 +22,78 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# ── Üretim Evreleri Arası Süreler ──────────────────────────────────────────────────
+# Üretim takviminde girilen bir tarihten diğer evrelerin tahmini tarihlerini hesaplamak için
+EVRE_SURELERI = {
+    'ekim_tarihi': {'sonraki': 'baski_tarihi', 'gun_sonra': 10},
+    'baski_tarihi': {'sonraki': 'toprak_serim_tarihi', 'gun_sonra': 1},
+    'toprak_serim_tarihi': {'sonraki': 'tirmik_tarihi', 'gun_sonra': 9},
+    'tirmik_tarihi': {'sonraki': 'hava_verme_tarihi', 'gun_sonra': 3},
+    'hava_verme_tarihi': {'sonraki': 'flash1_tarihi', 'gun_sonra': 11},
+    'flash1_tarihi': {'sonraki': 'flash2_tarihi', 'gun_sonra': 8},
+    'flash2_tarihi': {'sonraki': 'oda_bosaltma_tarihi', 'gun_sonra': 5},
+}
+
+def _calc_tahmini_tarihler(uretim_tarihleri):
+    """Üretim takvimindeki bilinen tarihlerden diğer evrelerin tahmini tarihlerini hesapla"""
+    tahmini_tarihler = {}
+    
+    # Önce bilinen tarihleri kopyala
+    for evre, tarih in uretim_tarihleri.items():
+        if tarih:
+            tahmini_tarihler[evre] = tarih
+    
+    # Bilinen bir tarihten diğerlerini hesapla (ileri ve geri)
+    for evre, tarih in uretim_tarihleri.items():
+        if not tarih:
+            continue
+        
+        # İleri doğru hesapla
+        current_evre = evre
+        current_date = tarih
+        while True:
+            if current_evre not in EVRE_SURELERI:
+                break
+            sure_info = EVRE_SURELERI[current_evre]
+            next_evre = sure_info['sonraki']
+            gun_sonra = sure_info['gun_sonra']
+            
+            # Sonraki evre henüz bilinmiyorsa, hesapla
+            if next_evre not in tahmini_tarihler or not tahmini_tarihler[next_evre]:
+                tahmini_tarihler[next_evre] = current_date + timedelta(days=gun_sonra)
+            
+            current_evre = next_evre
+            current_date = tahmini_tarihler[current_evre]
+    
+    # Geri doğru hesapla (önceki evreler için)
+    for evre, tarih in uretim_tarihleri.items():
+        if not tarih:
+            continue
+        
+        # Önceki evreyi bul ve hesapla
+        current_evre = evre
+        current_date = tarih
+        while True:
+            onceki_evre = None
+            gun_once = None
+            for ev, info in EVRE_SURELERI.items():
+                if info['sonraki'] == current_evre:
+                    onceki_evre = ev
+                    gun_once = info['gun_sonra']
+                    break
+            
+            if not onceki_evre:
+                break
+            
+            # Önceki evre henüz bilinmiyorsa, hesapla
+            if onceki_evre not in tahmini_tarihler or not tahmini_tarihler[onceki_evre]:
+                tahmini_tarihler[onceki_evre] = current_date - timedelta(days=gun_once)
+            
+            current_evre = onceki_evre
+            current_date = tahmini_tarihler[current_evre]
+    
+    return tahmini_tarihler
+
 # ── Şifre Koruması ────────────────────────────────────────────────────────────
 APP_SIFRE = "mantar2024"   # ← Buradan şifrenizi değiştirebilirsiniz
 
@@ -3298,24 +3370,36 @@ elif menu == "📅 İş Planı":
                                 'oda_bosaltma_tarihi': _parse_date(uretim_row.get('oda_bosaltma_tarihi')),
                             }
                     
+                    # Tahmini tarihleri hesapla (üretim takvimindeki bilinen tarihlerden)
+                    tahmini_tarihler = _calc_tahmini_tarihler(uretim_tarihleri)
+                    
                     # Hatırlatma tarihini hesapla - Üretim takvimi tabanlı
                     referans_asama_val = row.get('referans_asama')
                     if referans_asama_val and pd.notna(referans_asama_val):
                         referans_asama_str = str(referans_asama_val)
-                        # Önce üretim takviminden gerçek tarihi al
-                        gercek_ref_date = uretim_tarihleri.get(referans_asama_str + '_tarihi')
+                        referans_evre_key = referans_asama_str + '_tarihi'
+                        
+                        # 1. Önce üretim takviminden gerçek tarihi al
+                        gercek_ref_date = uretim_tarihleri.get(referans_evre_key)
                         if gercek_ref_date:
                             # Üretim takviminde gerçek tarih var - buna göre hesapla
                             plan_date = _calc_plan_date(gercek_ref_date, hatirlatma_gun_once)
                             hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Üretim Takvimi)"
-                        elif ref_date is not None:
-                            # Üretim takviminde yok ama ref_date var - bunu kullan
-                            plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
-                            hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Standart)"
                         else:
-                            # Referans var ama hiçbir tarih yok - bugünden tahmini
-                            plan_date = bugun + timedelta(days=hatirlatma_gun_once)
-                            hatirlatma_tipi = f"Tahmini: {_asama_label(referans_asama_str)} (Referans Tarihi Yok)"
+                            # 2. Gerçek tarih yok, tahmini tarihi kontrol et
+                            tahmini_ref_date = tahmini_tarihler.get(referans_evre_key)
+                            if tahmini_ref_date:
+                                # Tahmini tarih var - buna göre hesapla
+                                plan_date = _calc_plan_date(tahmini_ref_date, hatirlatma_gun_once)
+                                hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Tahmini)"
+                            elif ref_date is not None:
+                                # 3. Tahmini tarih yok ama ref_date var - bunu kullan
+                                plan_date = _calc_plan_date(ref_date, hatirlatma_gun_once)
+                                hatirlatma_tipi = f"Referans: {_asama_label(referans_asama_str)} (Standart)"
+                            else:
+                                # 4. Referans var ama hiçbir tarih yok - bugünden tahmini
+                                plan_date = bugun + timedelta(days=hatirlatma_gun_once)
+                                hatirlatma_tipi = f"Tahmini: {_asama_label(referans_asama_str)} (Referans Tarihi Yok)"
                     elif plan_date:
                         hatirlatma_tipi = "Manuel Tarih"
                     else:
