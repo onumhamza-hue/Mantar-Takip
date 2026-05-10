@@ -4093,6 +4093,8 @@ elif menu == "📊 Gelir-Gider Şablonu":
                 del st.session_state['sablon_yuklendi_mi']
                 if 'yuklenen_oda_giderleri' in st.session_state:
                     del st.session_state['yuklenen_oda_giderleri']
+                if 'oda_gider_state' in st.session_state:
+                    del st.session_state['oda_gider_state']
                 # Widget state'i temizle
                 for key in ['sablon_verim', 'sablon_cikma', 'sablon_cikma_fiyat', 'sablon_birinci_fiyat', 'sablon_kasa', 'sablon_toplama']:
                     if key in st.session_state:
@@ -4100,7 +4102,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                 st.rerun()
         else:
             # Widget state'i temizle
-            for key in ['sablon_verim', 'sablon_cikma', 'sablon_cikma_fiyat', 'sablon_birinci_fiyat', 'sablon_kasa', 'sablon_toplama', 'sablon_yuklendi_mi']:
+            for key in ['sablon_verim', 'sablon_cikma', 'sablon_cikma_fiyat', 'sablon_birinci_fiyat', 'sablon_kasa', 'sablon_toplama', 'sablon_yuklendi_mi', 'oda_gider_state']:
                 if key in st.session_state:
                     del st.session_state[key]
             
@@ -4144,16 +4146,20 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     yuklenen_oda_giderleri[oda_id] = {}
                 yuklenen_oda_giderleri[oda_id][gider['gider_adi']] = gider['gider_maliyeti']
         
+        # Session state'te oda giderlerini koru (sadece yeni şablon yüklendiğinde güncelle)
+        if 'oda_gider_state' not in st.session_state or st.session_state.get('sablon_yuklendi_mi') != st.session_state.get('yuklenen_sablon_id'):
+            st.session_state['oda_gider_state'] = yuklenen_oda_giderleri.copy() if yuklenen_oda_giderleri else {}
+        
         oda_profilleri = {}
         for _, oda in df_odalar.iterrows():
             with st.expander(f"🏢 {oda['oda_adi']} (Kapasite: {oda['kapasite_kg'] or 0} kg)", expanded=False):
                 st.markdown(f"**Kompost Kapasitesi:** {oda['kapasite_kg'] or 0} kg")
                 
                 if not df_giderler.empty:
-                    # Yüklenen şablondan varsayılan giderleri al
+                    # Session state'ten varsayılan giderleri al
                     varsayilan_giderler = []
-                    if oda['id'] in yuklenen_oda_giderleri:
-                        varsayilan_giderler = list(yuklenen_oda_giderleri[oda['id']].keys())
+                    if oda['id'] in st.session_state['oda_gider_state']:
+                        varsayilan_giderler = list(st.session_state['oda_gider_state'][oda['id']].keys())
                     
                     secili_giderler = st.multiselect(
                         f"Gider Kalemleri - {oda['oda_adi']}",
@@ -4167,9 +4173,9 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     if secili_giderler:
                         st.markdown("**Gider Maliyetleri (Odaya Özel):**")
                         for gider in secili_giderler:
-                            # Yüklenen şablondan maliyeti al, yoksa varsayılan hesapla
-                            if oda['id'] in yuklenen_oda_giderleri and gider in yuklenen_oda_giderleri[oda['id']]:
-                                varsayilan_fiyat = yuklenen_oda_giderleri[oda['id']][gider]
+                            # Session state'ten maliyeti al, yoksa varsayılan hesapla
+                            if oda['id'] in st.session_state['oda_gider_state'] and gider in st.session_state['oda_gider_state'][oda['id']]:
+                                varsayilan_fiyat = st.session_state['oda_gider_state'][oda['id']][gider]
                             else:
                                 varsayilan_fiyat = df_giderler[df_giderler['kalem_adi'] == gider]['birim_fiyat'].iloc[0]
                                 # Kompost kapasitesine göre varsayılan maliyet hesapla
@@ -4184,6 +4190,11 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                 key=f"gider_maliyet_{oda['id']}_{gider}"
                             )
                             gider_maliyetleri[gider] = gider_maliyeti
+                            
+                            # Session state'i güncelle
+                            if oda['id'] not in st.session_state['oda_gider_state']:
+                                st.session_state['oda_gider_state'][oda['id']] = {}
+                            st.session_state['oda_gider_state'][oda['id']][gider] = gider_maliyeti
                     
                     oda_profilleri[oda['id']] = {
                         'oda_adi': oda['oda_adi'],
