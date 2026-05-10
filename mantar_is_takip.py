@@ -4233,12 +4233,15 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                      VALUES (?, ?, ?, ?)""",
                                     (sablon_id, oda_id, gider_adi, gider_maliyeti))
                 
-                if not IS_CLOUD:
-                    conn.commit()
+                conn.commit()
                 st.success(f"✅ '{sablon_adi}' şablonu başarıyla kaydedildi!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Kaydetme hatası: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             finally:
                 conn.close()
         elif kaydet_buton and not sablon_adi:
