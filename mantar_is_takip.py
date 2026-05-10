@@ -3983,8 +3983,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                           olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                           FOREIGN KEY (sablon_id) REFERENCES gelir_gider_sablonlari(id) ON DELETE CASCADE,
                           FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
-            if not IS_CLOUD:
-                conn.commit()
+            conn.commit()
             df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
         except Exception as e:
             st.error(f"Tablo oluşturma hatası: {e}")
