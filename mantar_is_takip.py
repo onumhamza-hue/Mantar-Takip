@@ -4068,21 +4068,42 @@ elif menu == "📊 Gelir-Gider Şablonu":
         # Yüklenen şablon varsa değerleri yükle
         if 'yuklenen_sablon' in st.session_state and st.session_state['yuklenen_sablon']:
             yuklenen = st.session_state['yuklenen_sablon']
-            varsayilan_verim = yuklenen['verim_orani']
-            varsayilan_cikma = yuklenen['cikma_orani']
-            varsayilan_cikma_fiyat = yuklenen['cikma_satis_fiyati']
-            varsayilan_birinci_fiyat = yuklenen['birinci_kalite_fiyat']
-            varsayilan_kasa = yuklenen['kasa_maliyeti']
-            varsayilan_toplama = yuklenen['toplama_yontemi']
+            
+            # Widget state'i temizle ve yeni değerleri yükle
+            if 'sablon_verim' not in st.session_state or st.session_state.get('sablon_yuklendi_mi') != st.session_state['yuklenen_sablon_id']:
+                st.session_state['sablon_verim'] = yuklenen['verim_orani']
+                st.session_state['sablon_cikma'] = yuklenen['cikma_orani']
+                st.session_state['sablon_cikma_fiyat'] = yuklenen['cikma_satis_fiyati']
+                st.session_state['sablon_birinci_fiyat'] = yuklenen['birinci_kalite_fiyat']
+                st.session_state['sablon_kasa'] = yuklenen['kasa_maliyeti']
+                st.session_state['sablon_toplama'] = 0 if yuklenen['toplama_yontemi'] == "Tabağa Toplama" else 1
+                st.session_state['sablon_yuklendi_mi'] = st.session_state['yuklenen_sablon_id']
+            
+            varsayilan_verim = st.session_state['sablon_verim']
+            varsayilan_cikma = st.session_state['sablon_cikma']
+            varsayilan_cikma_fiyat = st.session_state['sablon_cikma_fiyat']
+            varsayilan_birinci_fiyat = st.session_state['sablon_birinci_fiyat']
+            varsayilan_kasa = st.session_state['sablon_kasa']
+            varsayilan_toplama = "Tabağa Toplama" if st.session_state['sablon_toplama'] == 0 else "Direk Toplama"
             
             st.info(f"📂 Yüklenen Şablon: {yuklenen['sablon_adi']}")
             if st.button("🔄 Şablonu Temizle", key="sablon_temizle"):
                 del st.session_state['yuklenen_sablon']
                 del st.session_state['yuklenen_sablon_id']
+                del st.session_state['sablon_yuklendi_mi']
                 if 'yuklenen_oda_giderleri' in st.session_state:
                     del st.session_state['yuklenen_oda_giderleri']
+                # Widget state'i temizle
+                for key in ['sablon_verim', 'sablon_cikma', 'sablon_cikma_fiyat', 'sablon_birinci_fiyat', 'sablon_kasa', 'sablon_toplama']:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.rerun()
         else:
+            # Widget state'i temizle
+            for key in ['sablon_verim', 'sablon_cikma', 'sablon_cikma_fiyat', 'sablon_birinci_fiyat', 'sablon_kasa', 'sablon_toplama', 'sablon_yuklendi_mi']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
             varsayilan_verim = 100.0
             varsayilan_cikma = 5.0
             varsayilan_cikma_fiyat = 15.0
