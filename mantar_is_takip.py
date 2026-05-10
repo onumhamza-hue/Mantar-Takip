@@ -4532,7 +4532,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                             st.rerun()
                     with col3:
                         if st.button(f"📊 Hesapla - {sablon['sablon_adi']}", key=f"hesapla_{sablon['id']}", type="secondary"):
-                            st.session_state[f'hesapla_{sablon["id"]}'] = True
+                            st.session_state[f'hesapla_{str(sablon["id"])}'] = True
                     with col4:
                         if st.button(f"🗑️ Sil - {sablon['sablon_adi']}", key=f"sil_{sablon['id']}"):
                             conn = get_db_connection()
@@ -4549,7 +4549,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                 conn.close()
                     
                     # Hesaplama sonuçları
-                    if st.session_state.get(f'hesapla_{sablon["id"]}'):
+                    if st.session_state.get(f'hesapla_{str(sablon["id"])}'):
                         st.markdown("---")
                         st.markdown("### 📊 Gelir-Gider Hesaplama Sonuçları")
                         
@@ -4698,7 +4698,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                             st.dataframe(df_sonuclar[['oda_adi', 'kompost_kg', 'toplam_verim_kg', 'toplam_gelir', 'toplam_gider', 'oda_kar']], use_container_width=True)
                             
                             if st.button(f"❌ Hesaplamayı Kapat - {sablon['sablon_adi']}", key=f"kapat_hesapla_{sablon['id']}"):
-                                del st.session_state[f'hesapla_{sablon["id"]}']
+                                del st.session_state[f'hesapla_{str(sablon["id"])}']
                                 st.rerun()
         else:
             st.markdown("---")
