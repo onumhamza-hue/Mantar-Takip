@@ -919,7 +919,7 @@ def _ensure_borc_yonetimi_tables():
                       ikinci_flas_ton REAL,
                       ikinci_flas_fiyat REAL,
                       ikinci_flas_vade INTEGER,
-                      kuluclka_suresi INTEGER,
+                      kulucka_suresi INTEGER,
                       topraklama_suresi INTEGER,
                       birinci_flas_suresi INTEGER,
                       ikinci_flas_suresi INTEGER,
@@ -4856,8 +4856,8 @@ elif menu == "💳 Borç Yönetimi":
         if st.button("💾 Nakit Akışını Kaydet", type="primary"):
             conn = get_db_connection()
             try:
-                # Tabloyu kontrol et ve yoksa oluştur
                 c = conn.cursor()
+                # Tabloyu oluştur (PostgreSQL syntax)
                 c.execute('''CREATE TABLE IF NOT EXISTS nakit_akisi
                              (id SERIAL PRIMARY KEY,
                               birinci_flas_ton REAL,
@@ -4866,16 +4866,17 @@ elif menu == "💳 Borç Yönetimi":
                               ikinci_flas_ton REAL,
                               ikinci_flas_fiyat REAL,
                               ikinci_flas_vade INTEGER,
-                              kuluclka_suresi INTEGER,
+                              kulucka_suresi INTEGER,
                               topraklama_suresi INTEGER,
                               birinci_flas_suresi INTEGER,
                               ikinci_flas_suresi INTEGER,
                               olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                conn.commit()
                 
                 c.execute("""INSERT INTO nakit_akisi 
                              (birinci_flas_ton, birinci_flas_fiyat, birinci_flas_vade,
                               ikinci_flas_ton, ikinci_flas_fiyat, ikinci_flas_vade,
-                              kuluclka_suresi, topraklama_suresi, birinci_flas_suresi, ikinci_flas_suresi)
+                              kulucka_suresi, topraklama_suresi, birinci_flas_suresi, ikinci_flas_suresi)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (birinci_flas_ton, birinci_flas_fiyat, birinci_flas_vade,
                      ikinci_flas_ton, ikinci_flas_fiyat, ikinci_flas_vade,
