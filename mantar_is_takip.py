@@ -925,9 +925,8 @@ def _ensure_borc_yonetimi_tables():
                       ikinci_flas_suresi INTEGER,
                       olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
-        if not IS_CLOUD:
-            conn.commit()
-    except Exception:
+        conn.commit()
+    except Exception as e:
         pass
     finally:
         try:
@@ -4857,7 +4856,22 @@ elif menu == "💳 Borç Yönetimi":
         if st.button("💾 Nakit Akışını Kaydet", type="primary"):
             conn = get_db_connection()
             try:
+                # Tabloyu kontrol et ve yoksa oluştur
                 c = conn.cursor()
+                c.execute('''CREATE TABLE IF NOT EXISTS nakit_akisi
+                             (id SERIAL PRIMARY KEY,
+                              birinci_flas_ton REAL,
+                              birinci_flas_fiyat REAL,
+                              birinci_flas_vade INTEGER,
+                              ikinci_flas_ton REAL,
+                              ikinci_flas_fiyat REAL,
+                              ikinci_flas_vade INTEGER,
+                              kuluclka_suresi INTEGER,
+                              topraklama_suresi INTEGER,
+                              birinci_flas_suresi INTEGER,
+                              ikinci_flas_suresi INTEGER,
+                              olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                
                 c.execute("""INSERT INTO nakit_akisi 
                              (birinci_flas_ton, birinci_flas_fiyat, birinci_flas_vade,
                               ikinci_flas_ton, ikinci_flas_fiyat, ikinci_flas_vade,
@@ -4871,6 +4885,10 @@ elif menu == "💳 Borç Yönetimi":
                 st.rerun()
             except Exception as e:
                 st.error(f"Kaydetme hatası: {e}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             finally:
                 conn.close()
         
@@ -4921,7 +4939,18 @@ elif menu == "💳 Borç Yönetimi":
             if kisalik_borc_adi and kisalik_tutar > 0:
                 conn = get_db_connection()
                 try:
+                    # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
+                    c.execute('''CREATE TABLE IF NOT EXISTS kisalik_borclar
+                                 (id SERIAL PRIMARY KEY,
+                                  borc_adi TEXT NOT NULL,
+                                  tutar REAL NOT NULL,
+                                  faiz_orani REAL NOT NULL,
+                                  vade_gun INTEGER NOT NULL,
+                                  odeme_tarihi DATE NOT NULL,
+                                  kategori TEXT NOT NULL,
+                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                    
                     c.execute("""INSERT INTO kisalik_borclar 
                                  (borc_adi, tutar, faiz_orani, vade_gun, odeme_tarihi, kategori)
                                  VALUES (?, ?, ?, ?, ?, ?)""",
@@ -4931,6 +4960,10 @@ elif menu == "💳 Borç Yönetimi":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Kaydetme hatası: {e}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                 finally:
                     conn.close()
             else:
@@ -4983,7 +5016,18 @@ elif menu == "💳 Borç Yönetimi":
             if uzunv_borc_adi and uzunv_tutar > 0:
                 conn = get_db_connection()
                 try:
+                    # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
+                    c.execute('''CREATE TABLE IF NOT EXISTS uzunv_borclar
+                                 (id SERIAL PRIMARY KEY,
+                                  borc_adi TEXT NOT NULL,
+                                  tutar REAL NOT NULL,
+                                  faiz_orani REAL NOT NULL,
+                                  aylik_taksit REAL NOT NULL,
+                                  kalan_ay INTEGER NOT NULL,
+                                  kategori TEXT NOT NULL,
+                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                    
                     c.execute("""INSERT INTO uzunv_borclar 
                                  (borc_adi, tutar, faiz_orani, aylik_taksit, kalan_ay, kategori)
                                  VALUES (?, ?, ?, ?, ?, ?)""",
@@ -4993,6 +5037,10 @@ elif menu == "💳 Borç Yönetimi":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Kaydetme hatası: {e}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                 finally:
                     conn.close()
             else:
@@ -5051,7 +5099,18 @@ elif menu == "💳 Borç Yönetimi":
             if banka_adi and kredi_limit > 0:
                 conn = get_db_connection()
                 try:
+                    # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
+                    c.execute('''CREATE TABLE IF NOT EXISTS banka_kredileri
+                                 (id SERIAL PRIMARY KEY,
+                                  banka_adi TEXT NOT NULL,
+                                  kredi_turu TEXT NOT NULL,
+                                  kredi_limit REAL NOT NULL,
+                                  faiz_orani REAL NOT NULL,
+                                  kullanilan_tutar REAL NOT NULL DEFAULT 0.0,
+                                  odeme_gunu INTEGER NOT NULL,
+                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                    
                     c.execute("""INSERT INTO banka_kredileri 
                                  (banka_adi, kredi_turu, kredi_limit, faiz_orani, kullanilan_tutar, odeme_gunu)
                                  VALUES (?, ?, ?, ?, ?, ?)""",
@@ -5061,6 +5120,10 @@ elif menu == "💳 Borç Yönetimi":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Kaydetme hatası: {e}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                 finally:
                     conn.close()
             else:
@@ -5117,7 +5180,17 @@ elif menu == "💳 Borç Yönetimi":
             if risk_adi and risk_etkisi > 0:
                 conn = get_db_connection()
                 try:
+                    # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
+                    c.execute('''CREATE TABLE IF NOT EXISTS risk_senaryolari
+                                 (id SERIAL PRIMARY KEY,
+                                  risk_adi TEXT NOT NULL,
+                                  risk_turu TEXT NOT NULL,
+                                  olasilik REAL NOT NULL,
+                                  finansal_etki REAL NOT NULL,
+                                  aciklama TEXT,
+                                  olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+                    
                     c.execute("""INSERT INTO risk_senaryolari 
                                  (risk_adi, risk_turu, olasilik, finansal_etki, aciklama)
                                  VALUES (?, ?, ?, ?, ?)""",
@@ -5127,6 +5200,10 @@ elif menu == "💳 Borç Yönetimi":
                     st.rerun()
                 except Exception as e:
                     st.error(f"Kaydetme hatası: {e}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                 finally:
                     conn.close()
             else:
