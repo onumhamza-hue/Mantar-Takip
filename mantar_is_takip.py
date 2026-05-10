@@ -4340,23 +4340,88 @@ elif menu == "📊 Gelir-Gider Şablonu":
             st.subheader("📋 Kayıtlı Şablonlar")
             
             for _, sablon in df_sablonlar.iterrows():
-                with st.expander(f"📄 {sablon['sablon_adi']} ({sablon['olusturma_tarihi']})"):
+                with st.expander(f"📄 {sablon['sablon_adi']} ({sablon['olusturma_tarihi']})", expanded=False):
+                    st.markdown("### Şablon Parametrelerini Düzenle")
+                    st.info("Değerleri değiştirip 'Güncelle' butonuna tıklayın.")
+                    
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.metric("Verim Oranı", f"{sablon['verim_orani']}%")
-                        st.metric("Çıkma Oranı", f"{sablon['cikma_orani']}%")
+                        duzenleme_verim = st.number_input(
+                            "Verim Oranı (%)", 
+                            min_value=0.0, max_value=100.0, 
+                            value=float(sablon['verim_orani']), 
+                            step=1.0, 
+                            key=f"duzenle_verim_{sablon['id']}"
+                        )
+                        duzenleme_cikma = st.number_input(
+                            "Çıkma Oranı (%)", 
+                            min_value=0.0, max_value=100.0, 
+                            value=float(sablon['cikma_orani']), 
+                            step=1.0, 
+                            key=f"duzenle_cikma_{sablon['id']}"
+                        )
                     with col2:
-                        st.metric("Çıkma Fiyatı", f"{sablon['cikma_satis_fiyati']} TL/kg")
-                        st.metric("1. Kalite Fiyatı", f"{sablon['birinci_kalite_fiyat']} TL/kg")
+                        duzenleme_cikma_fiyat = st.number_input(
+                            "Çıkma Fiyatı (TL/kg)", 
+                            min_value=0.0, 
+                            value=float(sablon['cikma_satis_fiyati']), 
+                            step=1.0, 
+                            key=f"duzenle_cikma_fiyat_{sablon['id']}"
+                        )
+                        duzenleme_birinci_fiyat = st.number_input(
+                            "1. Kalite Fiyatı (TL/kg)", 
+                            min_value=0.0, 
+                            value=float(sablon['birinci_kalite_fiyat']), 
+                            step=1.0, 
+                            key=f"duzenle_birinci_fiyat_{sablon['id']}"
+                        )
                     with col3:
-                        st.metric("Kasa Maliyeti", f"{sablon['kasa_maliyeti']} TL")
-                        st.metric("Toplama Yöntemi", sablon['toplama_yontemi'])
+                        duzenleme_kasa = st.number_input(
+                            "Kasa Maliyeti (TL)", 
+                            min_value=0.0, 
+                            value=float(sablon['kasa_maliyeti']), 
+                            step=1.0, 
+                            key=f"duzenleme_kasa_{sablon['id']}"
+                        )
+                        duzenleme_toplama = st.radio(
+                            "Toplama Yöntemi", 
+                            ["Tabağa Toplama", "Direk Toplama"], 
+                            index=0 if sablon['toplama_yontemi'] == "Tabağa Toplama" else 1,
+                            key=f"duzenleme_toplama_{sablon['id']}"
+                        )
                     
-                    if 'aciklama' in sablon and sablon['aciklama']:
-                        st.info(f"Açıklama: {sablon['aciklama']}")
+                    duzenleme_aciklama = st.text_input(
+                        "Açıklama", 
+                        value=sablon.get('aciklama', ''),
+                        key=f"duzenleme_aciklama_{sablon['id']}"
+                    )
                     
-                    col1, col2 = st.columns(2)
+                    st.markdown("---")
+                    
+                    col1, col2, col3 = st.columns(3)
                     with col1:
+                        if st.button(f"💾 Güncelle - {sablon['sablon_adi']}", key=f"guncelle_{sablon['id']}", type="primary"):
+                            conn = get_db_connection()
+                            try:
+                                c = conn.cursor()
+                                c.execute("""UPDATE gelir_gider_sablonlari 
+                                             SET sablon_adi=?, verim_orani=?, cikma_orani=?, cikma_satis_fiyati=?, 
+                                                 birinci_kalite_fiyat=?, kasa_maliyeti=?, toplama_yontemi=?, aciklama=?
+                                             WHERE id=?""",
+                                    (sablon['sablon_adi'], duzenleme_verim, duzenleme_cikma, duzenleme_cikma_fiyat, 
+                                     duzenleme_birinci_fiyat, duzenleme_kasa, duzenleme_toplama, duzenleme_aciklama, sablon['id']))
+                                conn.commit()
+                                st.success(f"✅ '{sablon['sablon_adi']}' şablonu güncellendi!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Güncelleme hatası: {e}")
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+                            finally:
+                                conn.close()
+                    with col2:
                         if st.button(f"📂 Yükle - {sablon['sablon_adi']}", key=f"yukle_{sablon['id']}"):
                             st.session_state['yuklenen_sablon_id'] = sablon['id']
                             st.session_state['yuklenen_sablon'] = sablon.to_dict()
@@ -4373,7 +4438,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                             
                             st.success(f"✅ {sablon['sablon_adi']} şablonu yüklendi! Şablon düzenleme sekmesine geçin.")
                             st.rerun()
-                    with col2:
+                    with col3:
                         if st.button(f"🗑️ Sil - {sablon['sablon_adi']}", key=f"sil_{sablon['id']}"):
                             conn = get_db_connection()
                             try:
