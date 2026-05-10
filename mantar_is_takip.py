@@ -4044,9 +4044,11 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     if st.button(f"🗑️ Sil - {sablon['sablon_adi']}", key=f"sil_{sablon['id']}"):
                         conn = get_db_connection()
                         try:
-                            conn.execute("DELETE FROM sablon_oda_giderleri WHERE sablon_id = ?", (sablon['id'],))
-                            conn.execute("DELETE FROM gelir_gider_sablonlari WHERE id = ?", (sablon['id'],))
-                            conn.commit()
+                            c = conn.cursor()
+                            c.execute("DELETE FROM sablon_oda_giderleri WHERE sablon_id = ?", (sablon['id'],))
+                            c.execute("DELETE FROM gelir_gider_sablonlari WHERE id = ?", (sablon['id'],))
+                            if not IS_CLOUD:
+                                conn.commit()
                             st.success(f"✅ {sablon['sablon_adi']} şablonu silindi!")
                             st.rerun()
                         except Exception as e:
@@ -4106,22 +4108,31 @@ elif menu == "📊 Gelir-Gider Şablonu":
         if kaydet_buton and sablon_adi:
             conn = get_db_connection()
             try:
+                c = conn.cursor()
                 # Şablonu kaydet
-                conn.execute("""INSERT INTO gelir_gider_sablonlari 
-                             (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
-                sablon_id = conn.lastrowid
+                if IS_CLOUD:
+                    c.execute("""INSERT INTO gelir_gider_sablonlari 
+                                 (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                                (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
+                    sablon_id = c.fetchone()[0]
+                else:
+                    c.execute("""INSERT INTO gelir_gider_sablonlari 
+                                 (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
+                    sablon_id = c.lastrowid
                 
                 # Odaya özel giderleri kaydet
                 for oda_id, profil in oda_profilleri.items():
                     for gider_adi, gider_maliyeti in profil['gider_maliyetleri'].items():
-                        conn.execute("""INSERT INTO sablon_oda_giderleri 
+                        c.execute("""INSERT INTO sablon_oda_giderleri 
                                      (sablon_id, oda_id, gider_adi, gider_maliyeti)
                                      VALUES (?, ?, ?, ?)""",
                                     (sablon_id, oda_id, gider_adi, gider_maliyeti))
                 
-                conn.commit()
+                if not IS_CLOUD:
+                    conn.commit()
                 st.success(f"✅ '{sablon_adi}' şablonu başarıyla kaydedildi!")
                 st.rerun()
             except Exception as e:
