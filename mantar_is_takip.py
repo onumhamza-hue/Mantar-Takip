@@ -926,8 +926,13 @@ def _ensure_borc_yonetimi_tables():
                       olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
         
         conn.commit()
+        print("Borç yönetimi tabloları oluşturuldu")
     except Exception as e:
-        pass
+        print(f"Borç yönetimi tablo oluşturma hatası: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     finally:
         try:
             conn.close()
