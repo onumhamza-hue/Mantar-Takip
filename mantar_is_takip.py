@@ -3953,7 +3953,38 @@ elif menu == "📊 Gelir-Gider Şablonu":
     # Şablon Yönetimi
     st.subheader("💾 Şablon Yönetimi")
     conn = get_db_connection()
-    df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
+    try:
+        df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
+    except Exception:
+        # Tablo yoksa oluştur
+        c = conn.cursor()
+        try:
+            c.execute('''CREATE TABLE IF NOT EXISTS gelir_gider_sablonlari
+                         (id SERIAL PRIMARY KEY,
+                          sablon_adi TEXT NOT NULL UNIQUE,
+                          verim_orani REAL NOT NULL DEFAULT 100.0,
+                          cikma_orani REAL NOT NULL DEFAULT 5.0,
+                          cikma_satis_fiyati REAL NOT NULL DEFAULT 15.0,
+                          birinci_kalite_fiyat REAL NOT NULL DEFAULT 45.0,
+                          kasa_maliyeti REAL NOT NULL DEFAULT 12.0,
+                          toplama_yontemi TEXT NOT NULL DEFAULT 'Tabağa Toplama',
+                          aciklama TEXT,
+                          olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS sablon_oda_giderleri
+                         (id SERIAL PRIMARY KEY,
+                          sablon_id INTEGER NOT NULL,
+                          oda_id INTEGER NOT NULL,
+                          gider_adi TEXT NOT NULL,
+                          gider_maliyeti REAL NOT NULL DEFAULT 0.0,
+                          olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          FOREIGN KEY (sablon_id) REFERENCES gelir_gider_sablonlari(id) ON DELETE CASCADE,
+                          FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+            if not IS_CLOUD:
+                conn.commit()
+            df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
+        except Exception as e:
+            st.error(f"Tablo oluşturma hatası: {e}")
+            df_sablonlar = pd.DataFrame()
     conn.close()
     
     col1, col2, col3 = st.columns(3)
