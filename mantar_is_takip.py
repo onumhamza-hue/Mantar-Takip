@@ -4857,8 +4857,14 @@ elif menu == "💳 Borç Yönetimi":
             conn = get_db_connection()
             try:
                 c = conn.cursor()
-                # Tabloyu oluştur (PostgreSQL syntax)
-                c.execute('''CREATE TABLE IF NOT EXISTS nakit_akisi
+                # Tabloyu kontrol et ve yoksa oluştur
+                try:
+                    c.execute("DROP TABLE IF EXISTS nakit_akisi")
+                    conn.commit()
+                except Exception:
+                    pass
+                
+                c.execute('''CREATE TABLE nakit_akisi
                              (id SERIAL PRIMARY KEY,
                               birinci_flas_ton REAL,
                               birinci_flas_fiyat REAL,
