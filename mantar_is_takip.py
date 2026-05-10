@@ -824,6 +824,43 @@ def _ensure_is_plani_table():
 
 _ensure_is_plani_table()
 
+# Gelir-Gider Şablonu tablolarını garanti oluştur
+def _ensure_gelir_gider_sablonu_tables():
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS gelir_gider_sablonlari
+                     (id SERIAL PRIMARY KEY,
+                      sablon_adi TEXT NOT NULL UNIQUE,
+                      verim_orani REAL NOT NULL DEFAULT 100.0,
+                      cikma_orani REAL NOT NULL DEFAULT 5.0,
+                      cikma_satis_fiyati REAL NOT NULL DEFAULT 15.0,
+                      birinci_kalite_fiyat REAL NOT NULL DEFAULT 45.0,
+                      kasa_maliyeti REAL NOT NULL DEFAULT 12.0,
+                      toplama_yontemi TEXT NOT NULL DEFAULT 'Tabağa Toplama',
+                      aciklama TEXT,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS sablon_oda_giderleri
+                     (id SERIAL PRIMARY KEY,
+                      sablon_id INTEGER NOT NULL,
+                      oda_id INTEGER NOT NULL,
+                      gider_adi TEXT NOT NULL,
+                      gider_maliyeti REAL NOT NULL DEFAULT 0.0,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      FOREIGN KEY (sablon_id) REFERENCES gelir_gider_sablonlari(id) ON DELETE CASCADE,
+                      FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+        if not IS_CLOUD:
+            conn.commit()
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+_ensure_gelir_gider_sablonu_tables()
+
 # Yan menü
 st.sidebar.title("🍄 Mantar İş Takip")
 st.sidebar.markdown("---")
