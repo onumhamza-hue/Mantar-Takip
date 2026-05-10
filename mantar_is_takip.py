@@ -4875,14 +4875,17 @@ elif menu == "💳 Borç Yönetimi":
                 conn.close()
         
         # Kayıtlı Nakit Akışı Verilerini Göster
-        conn = get_db_connection()
-        df_nakit = _read_sql("SELECT * FROM nakit_akisi ORDER BY olusturma_tarihi DESC LIMIT 1", conn)
-        conn.close()
-        
-        if not df_nakit.empty:
-            st.markdown("---")
-            st.subheader("📋 Kayıtlı Nakit Akışı Verileri")
-            st.dataframe(df_nakit.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+        try:
+            conn = get_db_connection()
+            df_nakit = _read_sql("SELECT * FROM nakit_akisi ORDER BY olusturma_tarihi DESC LIMIT 1", conn)
+            conn.close()
+            
+            if not df_nakit.empty:
+                st.markdown("---")
+                st.subheader("📋 Kayıtlı Nakit Akışı Verileri")
+                st.dataframe(df_nakit.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+        except Exception as e:
+            st.info("Henüz kayıtlı nakit akışı verisi bulunmuyor.")
         
     with tab2:
         st.markdown("### 💰 Kısa Vadeli Borçlar")
@@ -4934,15 +4937,18 @@ elif menu == "💳 Borç Yönetimi":
                 st.warning("⚠️ Borç adı ve tutar giriniz!")
         
         # Kayıtlı Kısa Vadeli Borçları Göster
-        conn = get_db_connection()
-        df_kisalik = _read_sql("SELECT * FROM kisalik_borclar ORDER BY odeme_tarihi ASC", conn)
-        conn.close()
-        
-        st.markdown("---")
-        st.subheader("📋 Kayıtlı Kısa Vadeli Borçlar")
-        if not df_kisalik.empty:
-            st.dataframe(df_kisalik.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
-        else:
+        try:
+            conn = get_db_connection()
+            df_kisalik = _read_sql("SELECT * FROM kisalik_borclar ORDER BY odeme_tarihi ASC", conn)
+            conn.close()
+            
+            st.markdown("---")
+            st.subheader("📋 Kayıtlı Kısa Vadeli Borçlar")
+            if not df_kisalik.empty:
+                st.dataframe(df_kisalik.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+            else:
+                st.info("Henüz kayıtlı borç bulunmuyor.")
+        except Exception as e:
             st.info("Henüz kayıtlı borç bulunmuyor.")
         
     with tab3:
@@ -4993,15 +4999,18 @@ elif menu == "💳 Borç Yönetimi":
                 st.warning("⚠️ Borç adı ve tutar giriniz!")
         
         # Kayıtlı Uzun Vadeli Borçları Göster
-        conn = get_db_connection()
-        df_uzunv = _read_sql("SELECT * FROM uzunv_borclar ORDER BY olusturma_tarihi DESC", conn)
-        conn.close()
-        
-        st.markdown("---")
-        st.subheader("📋 Kayıtlı Uzun Vadeli Borçlar")
-        if not df_uzunv.empty:
-            st.dataframe(df_uzunv.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
-        else:
+        try:
+            conn = get_db_connection()
+            df_uzunv = _read_sql("SELECT * FROM uzunv_borclar ORDER BY olusturma_tarihi DESC", conn)
+            conn.close()
+            
+            st.markdown("---")
+            st.subheader("📋 Kayıtlı Uzun Vadeli Borçlar")
+            if not df_uzunv.empty:
+                st.dataframe(df_uzunv.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+            else:
+                st.info("Henüz kayıtlı borç bulunmuyor.")
+        except Exception as e:
             st.info("Henüz kayıtlı borç bulunmuyor.")
         
     with tab4:
@@ -5058,15 +5067,18 @@ elif menu == "💳 Borç Yönetimi":
                 st.warning("⚠️ Banka adı ve limit giriniz!")
         
         # Kayıtlı Banka Kredilerini Göster
-        conn = get_db_connection()
-        df_banka = _read_sql("SELECT * FROM banka_kredileri ORDER BY banka_adi ASC", conn)
-        conn.close()
-        
-        st.markdown("---")
-        st.subheader("📋 Kayıtlı Banka Kredileri")
-        if not df_banka.empty:
-            st.dataframe(df_banka.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
-        else:
+        try:
+            conn = get_db_connection()
+            df_banka = _read_sql("SELECT * FROM banka_kredileri ORDER BY banka_adi ASC", conn)
+            conn.close()
+            
+            st.markdown("---")
+            st.subheader("📋 Kayıtlı Banka Kredileri")
+            if not df_banka.empty:
+                st.dataframe(df_banka.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+            else:
+                st.info("Henüz kayıtlı kredi bulunmuyor.")
+        except Exception as e:
             st.info("Henüz kayıtlı kredi bulunmuyor.")
         
     with tab5:
@@ -5121,15 +5133,18 @@ elif menu == "💳 Borç Yönetimi":
                 st.warning("⚠️ Risk adı ve finansal etki giriniz!")
         
         # Kayıtlı Risk Senaryolarını Göster
-        conn = get_db_connection()
-        df_risk = _read_sql("SELECT * FROM risk_senaryolari ORDER BY olasilik DESC", conn)
-        conn.close()
-        
-        st.markdown("---")
-        st.subheader("📋 Kayıtlı Risk Senaryoları")
-        if not df_risk.empty:
-            st.dataframe(df_risk.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
-        else:
+        try:
+            conn = get_db_connection()
+            df_risk = _read_sql("SELECT * FROM risk_senaryolari ORDER BY olasilik DESC", conn)
+            conn.close()
+            
+            st.markdown("---")
+            st.subheader("📋 Kayıtlı Risk Senaryoları")
+            if not df_risk.empty:
+                st.dataframe(df_risk.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+            else:
+                st.info("Henüz kayıtlı risk senaryosu bulunmuyor.")
+        except Exception as e:
             st.info("Henüz kayıtlı risk senaryosu bulunmuyor.")
     
     st.markdown("---")
