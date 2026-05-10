@@ -835,7 +835,7 @@ menu = st.sidebar.radio(
      "🌱 Üretim Takvimi", "📅 İş Planı",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
-     "📥 Veri Yedekleme", "💵 Gelir Hesaplama"]
+     "📥 Veri Yedekleme", "💵 Gelir Hesaplama", "📊 Gelir-Gider Şablonu"]
 )
 
 st.sidebar.markdown("---")
@@ -3777,11 +3777,10 @@ elif menu == "💵 Gelir Hesaplama":
         toplama_yontemi = st.radio("Toplama Yöntemi", ["Tabağa Toplama", "Direk Toplama"])
         
         if toplama_yontemi == "Tabağa Toplama":
-            tabak_maliyeti = st.number_input("Tabak Maliyeti (TL/kg)", min_value=0.0, value=2.5, step=0.1)
-            dokum_maliyeti = st.number_input("Döküm Maliyeti (TL/kg)", min_value=0.0, value=1.0, step=0.1)
+            kasa_maliyeti = st.number_input("1 Kasanın Maliyeti (TL)", min_value=0.0, value=12.0, step=1.0)
+            st.info("💡 1 Kasa = 12 TL\nDökme: 12 TL / 9 kg = 1.33 TL/kg\nKasaya: 12 TL / 5 kg = 2.4 TL/kg")
         else:
-            tabak_maliyeti = 0.0
-            dokum_maliyeti = 0.0
+            kasa_maliyeti = 0.0
     
     st.markdown("---")
     
@@ -3817,9 +3816,13 @@ elif menu == "💵 Gelir Hesaplama":
         birinci_kalite_gelir = birinci_kalite_kg * birinci_kalite_fiyat
         toplam_gelir = cikma_gelir + birinci_kalite_gelir
         
-        # Toplama Maliyeti
+        # Toplama Maliyeti (Kasa bazlı hesaplama)
         if toplama_yontemi == "Tabağa Toplama":
-            toplama_maliyeti = (birinci_kalite_kg * tabak_maliyeti) + (cikma_kg * dokum_maliyeti)
+            # 1. Kalite için kasaya toplama: 12 TL / 5 kg = 2.4 TL/kg
+            # Çıkma için dökme toplama: 12 TL / 9 kg = 1.33 TL/kg
+            kasaya_toplama_maliyeti = kasa_maliyeti / 5.0  # 2.4 TL/kg
+            dokum_toplama_maliyeti = kasa_maliyeti / 9.0  # 1.33 TL/kg
+            toplama_maliyeti = (birinci_kalite_kg * kasaya_toplama_maliyeti) + (cikma_kg * dokum_toplama_maliyeti)
         else:
             toplama_maliyeti = 0.0
         
@@ -3903,6 +3906,171 @@ elif menu == "💵 Gelir Hesaplama":
                 st.success("✅ Karlı Üretim")
             else:
                 st.error("❌ Zararlı Üretim")
+
+# Gelir-Gider Şablonu
+elif menu == "📊 Gelir-Gider Şablonu":
+    st.title("📊 Gelir-Gider Şablonu")
+    st.markdown("### Tüm Odaların Getiri Hesaplama")
+    st.info("Her oda için farklı gider profili oluşturun ve toplam getiri hesaplayın.")
+    
+    # Odaları getir
+    conn = get_db_connection()
+    df_odalar = _read_sql("SELECT id, oda_adi, kapasite_kg FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
+    conn.close()
+    
+    if df_odalar.empty:
+        st.warning("Aktif oda bulunmuyor.")
+    else:
+        # Ortak parametreler
+        st.subheader("🌱 Ortak Üretim Parametreleri")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            verim_orani = st.number_input("Verim Oranı (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, key="sablon_verim")
+            cikma_orani = st.number_input("Çıkma Oranı (%)", min_value=0.0, max_value=100.0, value=5.0, step=1.0, key="sablon_cikma")
+        with col2:
+            cikma_satis_fiyati = st.number_input("Çıkma Satış Fiyatı (TL/kg)", min_value=0.0, value=15.0, step=1.0, key="sablon_cikma_fiyat")
+            birinci_kalite_fiyat = st.number_input("1. Kalite Fiyatı (TL/kg)", min_value=0.0, value=45.0, step=1.0, key="sablon_birinci_fiyat")
+        with col3:
+            kasa_maliyeti = st.number_input("1 Kasanın Maliyeti (TL)", min_value=0.0, value=12.0, step=1.0, key="sablon_kasa")
+            toplama_yontemi = st.radio("Toplama Yöntemi", ["Tabağa Toplama", "Direk Toplama"], key="sablon_toplama")
+        
+        st.markdown("---")
+        
+        # Gider kalemlerini getir
+        conn = get_db_connection()
+        df_giderler = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1", conn)
+        conn.close()
+        
+        # Odaya özel gider profilleri
+        st.subheader("💼 Odaya Özel Gider Profilleri")
+        st.info("Her oda için gider kalemlerini ve maliyetlerini düzenleyin.")
+        
+        oda_profilleri = {}
+        for _, oda in df_odalar.iterrows():
+            with st.expander(f"🏢 {oda['oda_adi']} (Kapasite: {oda['kapasite_kg'] or 0} kg)", expanded=False):
+                st.markdown(f"**Kompost Kapasitesi:** {oda['kapasite_kg'] or 0} kg")
+                
+                if not df_giderler.empty:
+                    secili_giderler = st.multiselect(
+                        f"Gider Kalemleri - {oda['oda_adi']}",
+                        options=df_giderler['kalem_adi'].tolist(),
+                        default=[],
+                        key=f"gider_{oda['id']}"
+                    )
+                    
+                    # Seçili giderler için maliyet düzenleme
+                    gider_maliyetleri = {}
+                    if secili_giderler:
+                        st.markdown("**Gider Maliyetleri (Odaya Özel):**")
+                        for gider in secili_giderler:
+                            varsayilan_fiyat = df_giderler[df_giderler['kalem_adi'] == gider]['birim_fiyat'].iloc[0]
+                            # Kompost kapasitesine göre varsayılan maliyet hesapla
+                            kapasite_orani = (oda['kapasite_kg'] or 0) / 13000.0  # Standart 13 ton kapasite
+                            ayarlanmis_fiyat = varsayilan_fiyat * kapasite_orani if kapasite_orani > 0 else varsayilan_fiyat
+                            
+                            gider_maliyeti = st.number_input(
+                                f"{gider} (TL)",
+                                min_value=0.0,
+                                value=ayarlanmis_fiyat,
+                                step=10.0,
+                                key=f"gider_maliyet_{oda['id']}_{gider}"
+                            )
+                            gider_maliyetleri[gider] = gider_maliyeti
+                    
+                    oda_profilleri[oda['id']] = {
+                        'oda_adi': oda['oda_adi'],
+                        'kapasite_kg': oda['kapasite_kg'] or 0,
+                        'secili_giderler': secili_giderler,
+                        'gider_maliyetleri': gider_maliyetleri
+                    }
+        
+        st.markdown("---")
+        
+        # Hesaplama Butonu
+        if st.button("📊 Tüm Odaların Getirisini Hesapla", type="primary", use_container_width=True):
+            st.markdown("### 📊 Hesaplama Sonuçları")
+            
+            toplam_sonuclar = []
+            
+            for oda_id, profil in oda_profilleri.items():
+                kompost_kg = profil['kapasite_kg']
+                
+                # Verim hesapla
+                toplam_verim_kg = kompost_kg * (verim_orani / 100)
+                cikma_kg = toplam_verim_kg * (cikma_orani / 100)
+                birinci_kalite_kg = toplam_verim_kg - cikma_kg
+                
+                # Gelirler
+                cikma_gelir = cikma_kg * cikma_satis_fiyati
+                birinci_kalite_gelir = birinci_kalite_kg * birinci_kalite_fiyat
+                toplam_gelir = cikma_gelir + birinci_kalite_gelir
+                
+                # Toplama Maliyeti
+                if toplama_yontemi == "Tabağa Toplama":
+                    kasaya_toplama_maliyeti = kasa_maliyeti / 5.0
+                    dokum_toplama_maliyeti = kasa_maliyeti / 9.0
+                    toplama_maliyeti = (birinci_kalite_kg * kasaya_toplama_maliyeti) + (cikma_kg * dokum_toplama_maliyeti)
+                else:
+                    toplama_maliyeti = 0.0
+                
+                # Odaya özel giderler
+                secili_gider_toplam = sum(profil['gider_maliyetleri'].values())
+                
+                # Toplam Gider
+                toplam_gider = toplama_maliyeti + secili_gider_toplam
+                
+                # Tahmini Kar
+                tahmini_kar = toplam_gelir - toplam_gider
+                kar_orani = (tahmini_kar / toplam_gelir * 100) if toplam_gelir > 0 else 0.0
+                
+                toplam_sonuclar.append({
+                    'Oda': profil['oda_adi'],
+                    'Kompost (kg)': kompost_kg,
+                    'Verim (kg)': toplam_verim_kg,
+                    '1. Kalite (kg)': birinci_kalite_kg,
+                    'Çıkma (kg)': cikma_kg,
+                    'Toplam Gelir (TL)': toplam_gelir,
+                    'Toplama Maliyeti (TL)': toplama_maliyeti,
+                    'Gider Toplamı (TL)': secili_gider_toplam,
+                    'Toplam Gider (TL)': toplam_gider,
+                    'Tahmini Kar (TL)': tahmini_kar,
+                    'Kar Oranı (%)': kar_orani
+                })
+            
+            # Sonuçları tablo olarak göster
+            df_sonuclar = pd.DataFrame(toplam_sonuclar)
+            st.dataframe(df_sonuclar, use_container_width=True)
+            
+            # Toplam Özet
+            st.markdown("---")
+            st.subheader("🎯 Toplam Özet")
+            
+            toplam_kompost = df_sonuclar['Kompost (kg)'].sum()
+            toplam_verim = df_sonuclar['Verim (kg)'].sum()
+            toplam_gelir = df_sonuclar['Toplam Gelir (TL)'].sum()
+            toplam_gider = df_sonuclar['Toplam Gider (TL)'].sum()
+            toplam_kar = df_sonuclar['Tahmini Kar (TL)'].sum()
+            ortalama_kar_orani = df_sonuclar['Kar Oranı (%)'].mean()
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                st.metric("Toplam Kompost (kg)", f"{toplam_kompost:,.2f}")
+            with col2:
+                st.metric("Toplam Verim (kg)", f"{toplam_verim:,.2f}")
+            with col3:
+                st.metric("Toplam Gelir (TL)", f"{toplam_gelir:,.2f}")
+            with col4:
+                st.metric("Toplam Gider (TL)", f"{toplam_gider:,.2f}")
+            with col5:
+                kar_color = "normal" if toplam_kar >= 0 else "inverse"
+                st.metric("Toplam Kar (TL)", f"{toplam_kar:,.2f}", delta_color=kar_color)
+            
+            st.metric("Ortalama Kar Oranı", f"{ortalama_kar_orani:.2f}%")
+            
+            if toplam_kar >= 0:
+                st.success("✅ Genel Karlı Üretim")
+            else:
+                st.error("❌ Genel Zararlı Üretim")
 
 # Footer
 st.markdown("---")
