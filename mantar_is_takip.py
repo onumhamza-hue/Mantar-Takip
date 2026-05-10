@@ -4354,6 +4354,12 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     st.markdown("### Şablon Parametrelerini Düzenle")
                     st.info("Değerleri değiştirip 'Güncelle' butonuna tıklayın.")
                     
+                    duzenleme_sablon_adi = st.text_input(
+                        "Şablon Adı",
+                        value=sablon['sablon_adi'],
+                        key=f"duzenleme_sablon_adi_{sablon['id']}"
+                    )
+                    
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         duzenleme_verim = st.number_input(
@@ -4482,7 +4488,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                              SET sablon_adi=?, verim_orani=?, cikma_orani=?, cikma_satis_fiyati=?, 
                                                  birinci_kalite_fiyat=?, kasa_maliyeti=?, toplama_yontemi=?, aciklama=?
                                              WHERE id=?""",
-                                    (sablon['sablon_adi'], duzenleme_verim, duzenleme_cikma, duzenleme_cikma_fiyat, 
+                                    (duzenleme_sablon_adi, duzenleme_verim, duzenleme_cikma, duzenleme_cikma_fiyat, 
                                      duzenleme_birinci_fiyat, duzenleme_kasa, duzenleme_toplama, duzenleme_aciklama, sablon['id']))
                                 
                                 # Eski oda giderlerini sil
