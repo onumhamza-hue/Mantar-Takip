@@ -4051,6 +4051,10 @@ elif menu == "📊 Gelir-Gider Şablonu":
                             st.error(f"Silme hatası: {e}")
                         finally:
                             conn.close()
+    else:
+        st.markdown("---")
+        st.subheader("📋 Kayıtlı Şablonlar")
+        st.info("Henüz kayıtlı şablon bulunmuyor. İlk şablonunuzu oluşturmak için aşağıdaki parametreleri doldurun ve kaydedin.")
     
     st.markdown("---")
     
