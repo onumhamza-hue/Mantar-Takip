@@ -4130,7 +4130,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                   gider_maliyeti REAL NOT NULL DEFAULT 0.0,
                                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                   FOREIGN KEY (sablon_id) REFERENCES gelir_gider_sablonlari(id) ON DELETE CASCADE,
-                                  FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
+                                  FOREIGN KEY (oda_id) REFERENCES odalar(id))""")
                     if not IS_CLOUD:
                         conn.commit()
                 except Exception:
