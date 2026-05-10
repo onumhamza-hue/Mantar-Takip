@@ -872,7 +872,8 @@ menu = st.sidebar.radio(
      "🌱 Üretim Takvimi", "📅 İş Planı",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
-     "📥 Veri Yedekleme", "💵 Gelir Hesaplama", "📊 Gelir-Gider Şablonu"]
+     "📥 Veri Yedekleme", "💵 Gelir Hesaplama", "📊 Gelir-Gider Şablonu",
+     "💳 Borç Yönetimi"]
 )
 
 st.sidebar.markdown("---")
@@ -4707,6 +4708,133 @@ elif menu == "📊 Gelir-Gider Şablonu":
             st.markdown("---")
             st.subheader("📋 Kayıtlı Şablonlar")
             st.info("Henüz kayıtlı şablon bulunmuyor. İlk şablonunuzu oluşturmak için 'Şablon Oluştur/Düzenle' sekmesine geçin.")
+
+# Borç Yönetimi
+elif menu == "💳 Borç Yönetimi":
+    st.title("💳 Borç Yönetimi - Sanal CFO Sistemi")
+    st.markdown("""
+    ### 🎯 Rol ve Amaç
+    
+    Ticari mantar üretimi (Agaricus bisporus, Pleurotus ostreatus vb.), çok odalı tesis yatırımları ve tarımsal finansman konularında uzmanlaşmış üst düzey bir Sanal CFO olarak:
+    
+    - Tesisin nakit akışını optimize etmek
+    - Karlılığı koruyarak borç yükünü **"Borç Çığı (Avalanche)"** yöntemiyle en düşük maliyetle eritmek
+    - Üretim döngüsünün (kuluçka-hasat) kesintiye uğramamasını sağlamak
+    """)
+    
+    st.markdown("---")
+    
+    # Borç Yönetimi Sekmeleri
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Nakit Akışı Analizi", 
+        "💰 Kısa Vadeli Borçlar", 
+        "🏗️ Uzun Vadeli Borçlar", 
+        "🏦 Çoklu Banka Yönetimi", 
+        "⚠️ Risk Senaryoları"
+    ])
+    
+    with tab1:
+        st.markdown("### 📊 Nakit Akışı Analizi")
+        st.info("Üretim Döngüsü ve Nakit Dönüşüm Süresi (CCC) Analizi")
+        
+        st.markdown("""
+        **Nakit Dönüşüm Süresi (CCC) Hesaplama:**
+        - Kompost/misel alımı için yapılan peşin ödemeler
+        - Odaların kuluçka süresi
+        - 1. ve 2. flaş (hasat) evreleri
+        - Toptancı/marketlerden paranın tahsil edilmesi arasındaki ölü zamanı (nakit boşluğu)
+        """)
+        
+        st.markdown("---")
+        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+    with tab2:
+        st.markdown("### 💰 Kısa Vadeli Borçlar")
+        st.info("Kompost/misel ödemeleri, aylık elektrik/iklimlendirme faturası, işçilik")
+        
+        st.markdown("""
+        **Girdi Formatı:**
+        - Kompost/misel ödemeleri - Tutar, Faiz Oranı/Vade, Ödeme Tarihi
+        - Aylık elektrik/iklimlendirme faturası - Tutar, Faiz Oranı/Vade, Ödeme Tarihi
+        - İşçilik - Tutar, Faiz Oranı/Vade, Ödeme Tarihi
+        """)
+        
+        st.markdown("---")
+        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+    with tab3:
+        st.markdown("### 🏗️ Uzun Vadeli Borçlar")
+        st.info("Tesis, izolasyon, paketleme makinesi ve iklimlendirme yatırımı kredileri")
+        
+        st.markdown("""
+        **Girdi Formatı:**
+        - Tesis, izolasyon, paketleme makinesi ve iklimlendirme yatırımı kredileri - Tutar, Faiz Oranı, Taksit Miktarı
+        """)
+        
+        st.markdown("---")
+        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+    with tab4:
+        st.markdown("### 🏦 Çoklu Banka Yönetimi")
+        st.info("Farklı bankalardaki ticari kredileri, KMH (esnek hesap) ve kredi kartı limitleri")
+        
+        st.markdown("""
+        **Bankalar:**
+        - Akbank, Ziraat Bankası, Yapı Kredi, Garanti BBVA, İş Bankası, Enpara vb.
+        
+        **Kredi Türleri:**
+        - Ticari krediler
+        - KMH (esnek hesap)
+        - Kredi kartı limitleri
+        - Tarımsal sübvansiyonlu krediler
+        """)
+        
+        st.markdown("---")
+        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+    with tab5:
+        st.markdown("### ⚠️ Risk Senaryoları")
+        st.info("Döngüsel Risk Uyarısı ve B Planı")
+        
+        st.markdown("""
+        **Risk Faktörleri:**
+        - Hastalık (örneğin Trichoderma)
+        - Verim düşüklüğü
+        - Flaşlar arası gecikmeler
+        
+        **Analiz:**
+        - Oluşabilecek nakit açıkları
+        - "B Planı" senaryoları
+        """)
+        
+        st.markdown("---")
+        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+    
+    st.markdown("---")
+    st.markdown("### 📋 Beklenen Çıktılar")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Acil Eylem Planı (İlk 30-60 Gün):**
+        - Kuluçka gibi nakit girişinin olmadığı dönemlerde işletme sermayesi açığını kapatmak için hangi ödemelerin erteleneceği
+        - Hangi kredi limitlerinin kullanılacağı
+        
+        **Borç Çığı Optimizasyonu:**
+        - Tesisin toplam faiz yükünü en aza indirecek matematiksel ödeme planı
+        - En yüksek faizli kısa vadeli borçtan başlayarak
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Döngüsel Risk Uyarısı:**
+        - Hastalık, verim düşüklüğü veya flaşlar arası gecikmeler yaşanırsa oluşabilecek nakit açıkları
+        - "B Planı" senaryoları
+        
+        **Yatırım Geri Dönüşü (ROI) İzleme:**
+        - Alınan paketleme makineleri veya yeni iklimlendirme gruplarının kendi taksitlerini ne zaman ödemeye başlayacağının analizi
+        """)
 
 # Footer
 st.markdown("---")
