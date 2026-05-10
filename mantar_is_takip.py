@@ -4339,6 +4339,16 @@ elif menu == "📊 Gelir-Gider Şablonu":
         if not df_sablonlar.empty:
             st.subheader("📋 Kayıtlı Şablonlar")
             
+            # Gider kalemlerini getir
+            conn_gider = get_db_connection()
+            df_giderler = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1", conn_gider)
+            conn_gider.close()
+            
+            # Odaları getir
+            conn_odalar = get_db_connection()
+            df_odalar = _read_sql("SELECT id, oda_adi, kapasite_kg FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn_odalar)
+            conn_odalar.close()
+            
             for _, sablon in df_sablonlar.iterrows():
                 with st.expander(f"📄 {sablon['sablon_adi']} ({sablon['olusturma_tarihi']})", expanded=False):
                     st.markdown("### Şablon Parametrelerini Düzenle")
@@ -4397,6 +4407,69 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     )
                     
                     st.markdown("---")
+                    st.markdown("### 💼 Odaya Özel Gider Profilleri")
+                    
+                    # Şablon için oda giderlerini getir
+                    conn_oda_gider = get_db_connection()
+                    df_sablon_oda_giderleri = _read_sql("""SELECT oda_id, gider_adi, gider_maliyeti 
+                                                          FROM sablon_oda_giderleri 
+                                                          WHERE sablon_id = ?""", conn_oda_gider, params=(sablon['id'],))
+                    conn_oda_gider.close()
+                    
+                    # Oda giderlerini dictionary'e çevir
+                    sablon_oda_giderleri_dict = {}
+                    if not df_sablon_oda_giderleri.empty:
+                        for _, row in df_sablon_oda_giderleri.iterrows():
+                            oda_id = row['oda_id']
+                            if oda_id not in sablon_oda_giderleri_dict:
+                                sablon_oda_giderleri_dict[oda_id] = {}
+                            sablon_oda_giderleri_dict[oda_id][row['gider_adi']] = row['gider_maliyeti']
+                    
+                    # Her oda için gider profili oluştur
+                    oda_profilleri_duzenleme = {}
+                    if not df_odalar.empty and not df_giderler.empty:
+                        for _, oda in df_odalar.iterrows():
+                            with st.expander(f"🏢 {oda['oda_adi']} (Kapasite: {oda['kapasite_kg'] or 0} kg)", expanded=False):
+                                # Varsayılan giderleri al
+                                varsayilan_giderler = []
+                                if oda['id'] in sablon_oda_giderleri_dict:
+                                    varsayilan_giderler = list(sablon_oda_giderleri_dict[oda['id']].keys())
+                                
+                                secili_giderler_duzenleme = st.multiselect(
+                                    f"Gider Kalemleri - {oda['oda_adi']}",
+                                    options=df_giderler['kalem_adi'].tolist(),
+                                    default=varsayilan_giderler,
+                                    key=f"duzenleme_gider_{sablon['id']}_{oda['id']}"
+                                )
+                                
+                                # Seçili giderler için maliyet düzenleme
+                                gider_maliyetleri_duzenleme = {}
+                                if secili_giderler_duzenleme:
+                                    st.markdown("**Gider Maliyetleri (Odaya Özel):**")
+                                    for gider in secili_giderler_duzenleme:
+                                        # Varsayılan maliyeti al
+                                        if oda['id'] in sablon_oda_giderleri_dict and gider in sablon_oda_giderleri_dict[oda['id']]:
+                                            varsayilan_fiyat = sablon_oda_giderleri_dict[oda['id']][gider]
+                                        else:
+                                            varsayilan_fiyat = df_giderler[df_giderler['kalem_adi'] == gider]['birim_fiyat'].iloc[0]
+                                            kapasite_orani = (oda['kapasite_kg'] or 0) / 13000.0
+                                            varsayilan_fiyat = varsayilan_fiyat * kapasite_orani if kapasite_orani > 0 else varsayilan_fiyat
+                                        
+                                        gider_maliyeti_duzenleme = st.number_input(
+                                            f"{gider} (TL)",
+                                            min_value=0.0,
+                                            value=varsayilan_fiyat,
+                                            step=10.0,
+                                            key=f"duzenleme_gider_maliyet_{sablon['id']}_{oda['id']}_{gider}"
+                                        )
+                                        gider_maliyetleri_duzenleme[gider] = gider_maliyeti_duzenleme
+                                
+                                oda_profilleri_duzenleme[oda['id']] = {
+                                    'secili_giderler': secili_giderler_duzenleme,
+                                    'gider_maliyetleri': gider_maliyetleri_duzenleme
+                                }
+                    
+                    st.markdown("---")
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -4404,12 +4477,25 @@ elif menu == "📊 Gelir-Gider Şablonu":
                             conn = get_db_connection()
                             try:
                                 c = conn.cursor()
+                                # Ana şablon bilgilerini güncelle
                                 c.execute("""UPDATE gelir_gider_sablonlari 
                                              SET sablon_adi=?, verim_orani=?, cikma_orani=?, cikma_satis_fiyati=?, 
                                                  birinci_kalite_fiyat=?, kasa_maliyeti=?, toplama_yontemi=?, aciklama=?
                                              WHERE id=?""",
                                     (sablon['sablon_adi'], duzenleme_verim, duzenleme_cikma, duzenleme_cikma_fiyat, 
                                      duzenleme_birinci_fiyat, duzenleme_kasa, duzenleme_toplama, duzenleme_aciklama, sablon['id']))
+                                
+                                # Eski oda giderlerini sil
+                                c.execute("DELETE FROM sablon_oda_giderleri WHERE sablon_id = ?", (sablon['id'],))
+                                
+                                # Yeni oda giderlerini ekle
+                                for oda_id, profil in oda_profilleri_duzenleme.items():
+                                    for gider_adi, gider_maliyeti in profil['gider_maliyetleri'].items():
+                                        c.execute("""INSERT INTO sablon_oda_giderleri 
+                                                     (sablon_id, oda_id, gider_adi, gider_maliyeti)
+                                                     VALUES (?, ?, ?, ?)""",
+                                                (sablon['id'], oda_id, gider_adi, gider_maliyeti))
+                                
                                 conn.commit()
                                 st.success(f"✅ '{sablon['sablon_adi']}' şablonu güncellendi!")
                                 st.rerun()
