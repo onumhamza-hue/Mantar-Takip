@@ -4176,7 +4176,19 @@ elif menu == "📊 Gelir-Gider Şablonu":
         # Şablon Kaydetme Butonu
         st.subheader("💾 Şablonu Kaydet")
         st.info("Tüm parametreleri ve oda giderlerini düzenledikten sonra kaydet butonuna tıklayın.")
-        kaydet_buton = st.button("💾 Şablonu Kaydet", type="primary", use_container_width=True, key="sablon_kaydet")
+        
+        # Şablon yüklendi mi kontrol et
+        yuklenen_sablon_var = 'yuklenen_sablon' in st.session_state and st.session_state['yuklenen_sablon']
+        
+        if yuklenen_sablon_var:
+            col1, col2 = st.columns(2)
+            with col1:
+                kaydet_buton = st.button("🔄 Şablonu Güncelle", type="primary", use_container_width=True, key="sablon_guncelle")
+            with col2:
+                yeni_olarak_kaydet = st.button("➕ Yeni Olarak Kaydet", use_container_width=True, key="sablon_yeni_kaydet")
+        else:
+            kaydet_buton = st.button("💾 Şablonu Kaydet", type="primary", use_container_width=True, key="sablon_kaydet")
+            yeni_olarak_kaydet = False
         
         # Şablon kaydetme işlemi (oda_profilleri dolduktan sonra)
         if kaydet_buton and sablon_adi:
@@ -4205,36 +4217,60 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                   olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                                   FOREIGN KEY (sablon_id) REFERENCES gelir_gider_sablonlari(id) ON DELETE CASCADE,
                                   FOREIGN KEY (oda_id) REFERENCES odalar(id))""")
-                    if not IS_CLOUD:
-                        conn.commit()
+                    conn.commit()
                 except Exception:
                     pass
                 
-                # Şablonu kaydet
-                if IS_CLOUD:
-                    c.execute("""INSERT INTO gelir_gider_sablonlari 
-                                 (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
-                                (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
-                    sablon_id = c.fetchone()[0]
-                else:
-                    c.execute("""INSERT INTO gelir_gider_sablonlari 
-                                 (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                                (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
-                    sablon_id = c.lastrowid
-                
-                # Odaya özel giderleri kaydet
-                for oda_id, profil in oda_profilleri.items():
-                    for gider_adi, gider_maliyeti in profil['gider_maliyetleri'].items():
-                        c.execute("""INSERT INTO sablon_oda_giderleri 
-                                     (sablon_id, oda_id, gider_adi, gider_maliyeti)
-                                     VALUES (?, ?, ?, ?)""",
+                # Şablon güncelleme veya yeni kaydetme
+                if yuklenen_sablon_var and not yeni_olarak_kaydet:
+                    # Mevcut şablonu güncelle
+                    sablon_id = st.session_state['yuklenen_sablon_id']
+                    c.execute("""UPDATE gelir_gider_sablonlari 
+                                 SET sablon_adi=?, verim_orani=?, cikma_orani=?, cikma_satis_fiyati=?, 
+                                     birinci_kalite_fiyat=?, kasa_maliyeti=?, toplama_yontemi=?, aciklama=?
+                                 WHERE id=?""",
+                            (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama, sablon_id))
+                    
+                    # Eski oda giderlerini sil
+                    c.execute("DELETE FROM sablon_oda_giderleri WHERE sablon_id = ?", (sablon_id,))
+                    
+                    # Yeni oda giderlerini ekle
+                    for oda_id, profil in oda_profilleri.items():
+                        for gider_adi, gider_maliyeti in profil['gider_maliyetleri'].items():
+                            c.execute("""INSERT INTO sablon_oda_giderleri 
+                                         (sablon_id, oda_id, gider_adi, gider_maliyeti)
+                                         VALUES (?, ?, ?, ?)""",
                                     (sablon_id, oda_id, gider_adi, gider_maliyeti))
-                
-                conn.commit()
-                st.success(f"✅ '{sablon_adi}' şablonu başarıyla kaydedildi!")
-                st.rerun()
+                    
+                    conn.commit()
+                    st.success(f"✅ '{sablon_adi}' şablonu başarıyla güncellendi!")
+                    st.rerun()
+                else:
+                    # Yeni şablon olarak kaydet
+                    if IS_CLOUD:
+                        c.execute("""INSERT INTO gelir_gider_sablonlari 
+                                     (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+                                (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
+                        sablon_id = c.fetchone()[0]
+                    else:
+                        c.execute("""INSERT INTO gelir_gider_sablonlari 
+                                     (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
+                        sablon_id = c.lastrowid
+                    
+                    # Odaya özel giderleri kaydet
+                    for oda_id, profil in oda_profilleri.items():
+                        for gider_adi, gider_maliyeti in profil['gider_maliyetleri'].items():
+                            c.execute("""INSERT INTO sablon_oda_giderleri 
+                                         (sablon_id, oda_id, gider_adi, gider_maliyeti)
+                                         VALUES (?, ?, ?, ?)""",
+                                    (sablon_id, oda_id, gider_adi, gider_maliyeti))
+                    
+                    conn.commit()
+                    st.success(f"✅ '{sablon_adi}' şablonu başarıyla kaydedildi!")
+                    st.rerun()
             except Exception as e:
                 st.error(f"Kaydetme hatası: {e}")
                 try:
@@ -4243,6 +4279,8 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     pass
             finally:
                 conn.close()
+        elif yeni_olarak_kaydet and sablon_adi:
+            st.warning("⚠️ Yeni şablon olarak kaydetmek için önce 'Şablonu Temizle' butonuna tıklayın.")
         elif kaydet_buton and not sablon_adi:
             st.warning("⚠️ Şablon adı giriniz!")
         
