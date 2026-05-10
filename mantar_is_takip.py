@@ -861,6 +861,82 @@ def _ensure_gelir_gider_sablonu_tables():
 
 _ensure_gelir_gider_sablonu_tables()
 
+# Borç Yönetimi tablolarını garanti oluştur
+def _ensure_borc_yonetimi_tables():
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        
+        # Kısa Vadeli Borçlar tablosu
+        c.execute('''CREATE TABLE IF NOT EXISTS kisalik_borclar
+                     (id SERIAL PRIMARY KEY,
+                      borc_adi TEXT NOT NULL,
+                      tutar REAL NOT NULL,
+                      faiz_orani REAL NOT NULL,
+                      vade_gun INTEGER NOT NULL,
+                      odeme_tarihi DATE NOT NULL,
+                      kategori TEXT NOT NULL,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # Uzun Vadeli Borçlar tablosu
+        c.execute('''CREATE TABLE IF NOT EXISTS uzunv_borclar
+                     (id SERIAL PRIMARY KEY,
+                      borc_adi TEXT NOT NULL,
+                      tutar REAL NOT NULL,
+                      faiz_orani REAL NOT NULL,
+                      aylik_taksit REAL NOT NULL,
+                      kalan_ay INTEGER NOT NULL,
+                      kategori TEXT NOT NULL,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # Banka Kredileri tablosu
+        c.execute('''CREATE TABLE IF NOT EXISTS banka_kredileri
+                     (id SERIAL PRIMARY KEY,
+                      banka_adi TEXT NOT NULL,
+                      kredi_turu TEXT NOT NULL,
+                      kredi_limit REAL NOT NULL,
+                      faiz_orani REAL NOT NULL,
+                      kullanilan_tutar REAL NOT NULL DEFAULT 0.0,
+                      odeme_gunu INTEGER NOT NULL,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # Risk Senaryoları tablosu
+        c.execute('''CREATE TABLE IF NOT EXISTS risk_senaryolari
+                     (id SERIAL PRIMARY KEY,
+                      risk_adi TEXT NOT NULL,
+                      risk_turu TEXT NOT NULL,
+                      olasilik REAL NOT NULL,
+                      finansal_etki REAL NOT NULL,
+                      aciklama TEXT,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # Nakit Akışı tablosu
+        c.execute('''CREATE TABLE IF NOT EXISTS nakit_akisi
+                     (id SERIAL PRIMARY KEY,
+                      birinci_flas_ton REAL,
+                      birinci_flas_fiyat REAL,
+                      birinci_flas_vade INTEGER,
+                      ikinci_flas_ton REAL,
+                      ikinci_flas_fiyat REAL,
+                      ikinci_flas_vade INTEGER,
+                      kuluclka_suresi INTEGER,
+                      topraklama_suresi INTEGER,
+                      birinci_flas_suresi INTEGER,
+                      ikinci_flas_suresi INTEGER,
+                      olusturma_tarihi TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        if not IS_CLOUD:
+            conn.commit()
+    except Exception:
+        pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+_ensure_borc_yonetimi_tables()
+
 # Yan menü
 st.sidebar.title("🍄 Mantar İş Takip")
 st.sidebar.markdown("---")
@@ -4779,7 +4855,34 @@ elif menu == "💳 Borç Yönetimi":
             ikinci_flas_suresi = st.number_input("2. Flaş Süresi (gün)", min_value=0, step=1, value=14, key="ikinci_flas_suresi")
         
         if st.button("💾 Nakit Akışını Kaydet", type="primary"):
-            st.success("✅ Nakit akış verileri kaydedildi!")
+            conn = get_db_connection()
+            try:
+                c = conn.cursor()
+                c.execute("""INSERT INTO nakit_akisi 
+                             (birinci_flas_ton, birinci_flas_fiyat, birinci_flas_vade,
+                              ikinci_flas_ton, ikinci_flas_fiyat, ikinci_flas_vade,
+                              kuluclka_suresi, topraklama_suresi, birinci_flas_suresi, ikinci_flas_suresi)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (birinci_flas_ton, birinci_flas_fiyat, birinci_flas_vade,
+                     ikinci_flas_ton, ikinci_flas_fiyat, ikinci_flas_vade,
+                     kuluçka_suresi, topraklama_suresi, birinci_flas_suresi, ikinci_flas_suresi))
+                conn.commit()
+                st.success("✅ Nakit akış verileri kaydedildi!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Kaydetme hatası: {e}")
+            finally:
+                conn.close()
+        
+        # Kayıtlı Nakit Akışı Verilerini Göster
+        conn = get_db_connection()
+        df_nakit = _read_sql("SELECT * FROM nakit_akisi ORDER BY olusturma_tarihi DESC LIMIT 1", conn)
+        conn.close()
+        
+        if not df_nakit.empty:
+            st.markdown("---")
+            st.subheader("📋 Kayıtlı Nakit Akışı Verileri")
+            st.dataframe(df_nakit.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
         
     with tab2:
         st.markdown("### 💰 Kısa Vadeli Borçlar")
@@ -4812,11 +4915,35 @@ elif menu == "💳 Borç Yönetimi":
             kisalik_kategori = st.selectbox("Kategori", ["Kompost/Misel", "Elektrik/İklimlendirme", "İşçilik", "Diğer"], key="kisalik_kategori")
         
         if st.button("➕ Kısa Vadeli Borç Ekle", type="primary"):
-            st.success("✅ Kısa vadeli borç eklendi!")
+            if kisalik_borc_adi and kisalik_tutar > 0:
+                conn = get_db_connection()
+                try:
+                    c = conn.cursor()
+                    c.execute("""INSERT INTO kisalik_borclar 
+                                 (borc_adi, tutar, faiz_orani, vade_gun, odeme_tarihi, kategori)
+                                 VALUES (?, ?, ?, ?, ?, ?)""",
+                        (kisalik_borc_adi, kisalik_tutar, kisalik_faiz, kisalik_vade, kisalik_odeme_tarihi, kisalik_kategori))
+                    conn.commit()
+                    st.success("✅ Kısa vadeli borç eklendi!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Kaydetme hatası: {e}")
+                finally:
+                    conn.close()
+            else:
+                st.warning("⚠️ Borç adı ve tutar giriniz!")
+        
+        # Kayıtlı Kısa Vadeli Borçları Göster
+        conn = get_db_connection()
+        df_kisalik = _read_sql("SELECT * FROM kisalik_borclar ORDER BY odeme_tarihi ASC", conn)
+        conn.close()
         
         st.markdown("---")
         st.subheader("📋 Kayıtlı Kısa Vadeli Borçlar")
-        st.info("Henüz kayıtlı borç bulunmuyor.")
+        if not df_kisalik.empty:
+            st.dataframe(df_kisalik.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+        else:
+            st.info("Henüz kayıtlı borç bulunmuyor.")
         
     with tab3:
         st.markdown("### 🏗️ Uzun Vadeli Borçlar")
@@ -4847,11 +4974,35 @@ elif menu == "💳 Borç Yönetimi":
             uzunv_kategori = st.selectbox("Kategori", ["Tesis Yatırımı", "İzolasyon", "Paketleme Makinesi", "İklimlendirme", "Diğer"], key="uzunv_kategori")
         
         if st.button("➕ Uzun Vadeli Borç Ekle", type="primary"):
-            st.success("✅ Uzun vadeli borç eklendi!")
+            if uzunv_borc_adi and uzunv_tutar > 0:
+                conn = get_db_connection()
+                try:
+                    c = conn.cursor()
+                    c.execute("""INSERT INTO uzunv_borclar 
+                                 (borc_adi, tutar, faiz_orani, aylik_taksit, kalan_ay, kategori)
+                                 VALUES (?, ?, ?, ?, ?, ?)""",
+                        (uzunv_borc_adi, uzunv_tutar, uzunv_faiz, uzunv_taksit, uzunv_kalan_ay, uzunv_kategori))
+                    conn.commit()
+                    st.success("✅ Uzun vadeli borç eklendi!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Kaydetme hatası: {e}")
+                finally:
+                    conn.close()
+            else:
+                st.warning("⚠️ Borç adı ve tutar giriniz!")
+        
+        # Kayıtlı Uzun Vadeli Borçları Göster
+        conn = get_db_connection()
+        df_uzunv = _read_sql("SELECT * FROM uzunv_borclar ORDER BY olusturma_tarihi DESC", conn)
+        conn.close()
         
         st.markdown("---")
         st.subheader("📋 Kayıtlı Uzun Vadeli Borçlar")
-        st.info("Henüz kayıtlı borç bulunmuyor.")
+        if not df_uzunv.empty:
+            st.dataframe(df_uzunv.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+        else:
+            st.info("Henüz kayıtlı borç bulunmuyor.")
         
     with tab4:
         st.markdown("### 🏦 Çoklu Banka Yönetimi")
@@ -4888,11 +5039,35 @@ elif menu == "💳 Borç Yönetimi":
             odeme_gunu = st.number_input("Ödeme Günü (ayın kaçı)", min_value=1, max_value=31, step=1, key="odeme_gunu")
         
         if st.button("➕ Banka Kredisi Ekle", type="primary"):
-            st.success("✅ Banka kredisi eklendi!")
+            if banka_adi and kredi_limit > 0:
+                conn = get_db_connection()
+                try:
+                    c = conn.cursor()
+                    c.execute("""INSERT INTO banka_kredileri 
+                                 (banka_adi, kredi_turu, kredi_limit, faiz_orani, kullanilan_tutar, odeme_gunu)
+                                 VALUES (?, ?, ?, ?, ?, ?)""",
+                        (banka_adi, kredi_turu, kredi_limit, kredi_faiz, kullanilan_tutar, odeme_gunu))
+                    conn.commit()
+                    st.success("✅ Banka kredisi eklendi!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Kaydetme hatası: {e}")
+                finally:
+                    conn.close()
+            else:
+                st.warning("⚠️ Banka adı ve limit giriniz!")
+        
+        # Kayıtlı Banka Kredilerini Göster
+        conn = get_db_connection()
+        df_banka = _read_sql("SELECT * FROM banka_kredileri ORDER BY banka_adi ASC", conn)
+        conn.close()
         
         st.markdown("---")
         st.subheader("📋 Kayıtlı Banka Kredileri")
-        st.info("Henüz kayıtlı kredi bulunmuyor.")
+        if not df_banka.empty:
+            st.dataframe(df_banka.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+        else:
+            st.info("Henüz kayıtlı kredi bulunmuyor.")
         
     with tab5:
         st.markdown("### ⚠️ Risk Senaryoları")
@@ -4927,11 +5102,35 @@ elif menu == "💳 Borç Yönetimi":
         risk_aciklama = st.text_area("Açıklama / B Planı", key="risk_aciklama")
         
         if st.button("➕ Risk Senaryosu Ekle", type="primary"):
-            st.success("✅ Risk senaryosu eklendi!")
+            if risk_adi and risk_etkisi > 0:
+                conn = get_db_connection()
+                try:
+                    c = conn.cursor()
+                    c.execute("""INSERT INTO risk_senaryolari 
+                                 (risk_adi, risk_turu, olasilik, finansal_etki, aciklama)
+                                 VALUES (?, ?, ?, ?, ?)""",
+                        (risk_adi, risk_turu, risk_olasilik, risk_etkisi, risk_aciklama))
+                    conn.commit()
+                    st.success("✅ Risk senaryosu eklendi!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Kaydetme hatası: {e}")
+                finally:
+                    conn.close()
+            else:
+                st.warning("⚠️ Risk adı ve finansal etki giriniz!")
+        
+        # Kayıtlı Risk Senaryolarını Göster
+        conn = get_db_connection()
+        df_risk = _read_sql("SELECT * FROM risk_senaryolari ORDER BY olasilik DESC", conn)
+        conn.close()
         
         st.markdown("---")
         st.subheader("📋 Kayıtlı Risk Senaryoları")
-        st.info("Henüz kayıtlı risk senaryosu bulunmuyor.")
+        if not df_risk.empty:
+            st.dataframe(df_risk.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+        else:
+            st.info("Henüz kayıtlı risk senaryosu bulunmuyor.")
     
     st.markdown("---")
     st.markdown("### 📋 Beklenen Çıktılar")
