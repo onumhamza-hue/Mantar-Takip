@@ -3913,6 +3913,77 @@ elif menu == "📊 Gelir-Gider Şablonu":
     st.markdown("### Tüm Odaların Getiri Hesaplama")
     st.info("Her oda için farklı gider profili oluşturun ve toplam getiri hesaplayın.")
     
+    # Şablon Yönetimi
+    st.subheader("💾 Şablon Yönetimi")
+    conn = get_db_connection()
+    df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
+    conn.close()
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        sablon_adi = st.text_input("Şablon Adı", key="yeni_sablon_adi")
+    with col2:
+        aciklama = st.text_input("Açıklama (Opsiyonel)", key="yeni_sablon_aciklama")
+    with col3:
+        st.write("")
+        st.write("")
+        kaydet_buton = st.button("💾 Şablonu Kaydet", type="primary", key="sablon_kaydet")
+    
+    # Şablon Listesi
+    if not df_sablonlar.empty:
+        st.markdown("---")
+        st.subheader("📋 Kayıtlı Şablonlar")
+        
+        for _, sablon in df_sablonlar.iterrows():
+            with st.expander(f"📄 {sablon['sablon_adi']} ({sablon['olusturma_tarihi']})"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Verim Oranı", f"{sablon['verim_orani']}%")
+                    st.metric("Çıkma Oranı", f"{sablon['cikma_orani']}%")
+                with col2:
+                    st.metric("Çıkma Fiyatı", f"{sablon['cikma_satis_fiyati']} TL/kg")
+                    st.metric("1. Kalite Fiyatı", f"{sablon['birinci_kalite_fiyat']} TL/kg")
+                with col3:
+                    st.metric("Kasa Maliyeti", f"{sablon['kasa_maliyeti']} TL")
+                    st.metric("Toplama Yöntemi", sablon['toplama_yontemi'])
+                
+                if sablon['aciklama']:
+                    st.info(f"Açıklama: {sablon['aciklama']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"📂 Yükle - {sablon['sablon_adi']}", key=f"yukle_{sablon['id']}"):
+                        st.session_state['yuklenen_sablon_id'] = sablon['id']
+                        st.session_state['yuklenen_sablon'] = sablon.to_dict()
+                        
+                        # Odaya özel giderleri de yükle
+                        conn_gider = get_db_connection()
+                        df_oda_giderleri = _read_sql("""SELECT oda_id, gider_adi, gider_maliyeti 
+                                                    FROM sablon_oda_giderleri 
+                                                    WHERE sablon_id = ?""", conn_gider, params=(sablon['id'],))
+                        conn_gider.close()
+                        
+                        if not df_oda_giderleri.empty:
+                            st.session_state['yuklenen_oda_giderleri'] = df_oda_giderleri.to_dict('records')
+                        
+                        st.success(f"✅ {sablon['sablon_adi']} şablonu yüklendi!")
+                        st.rerun()
+                with col2:
+                    if st.button(f"🗑️ Sil - {sablon['sablon_adi']}", key=f"sil_{sablon['id']}"):
+                        conn = get_db_connection()
+                        try:
+                            conn.execute("DELETE FROM sablon_oda_giderleri WHERE sablon_id = ?", (sablon['id'],))
+                            conn.execute("DELETE FROM gelir_gider_sablonlari WHERE id = ?", (sablon['id'],))
+                            conn.commit()
+                            st.success(f"✅ {sablon['sablon_adi']} şablonu silindi!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Silme hatası: {e}")
+                        finally:
+                            conn.close()
+    
+    st.markdown("---")
+    
     # Odaları getir
     conn = get_db_connection()
     df_odalar = _read_sql("SELECT id, oda_adi, kapasite_kg FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
@@ -3921,18 +3992,72 @@ elif menu == "📊 Gelir-Gider Şablonu":
     if df_odalar.empty:
         st.warning("Aktif oda bulunmuyor.")
     else:
+        # Yüklenen şablon varsa değerleri yükle
+        if 'yuklenen_sablon' in st.session_state and st.session_state['yuklenen_sablon']:
+            yuklenen = st.session_state['yuklenen_sablon']
+            varsayilan_verim = yuklenen['verim_orani']
+            varsayilan_cikma = yuklenen['cikma_orani']
+            varsayilan_cikma_fiyat = yuklenen['cikma_satis_fiyati']
+            varsayilan_birinci_fiyat = yuklenen['birinci_kalite_fiyat']
+            varsayilan_kasa = yuklenen['kasa_maliyeti']
+            varsayilan_toplama = yuklenen['toplama_yontemi']
+            
+            st.info(f"📂 Yüklenen Şablon: {yuklenen['sablon_adi']}")
+            if st.button("🔄 Şablonu Temizle", key="sablon_temizle"):
+                del st.session_state['yuklenen_sablon']
+                del st.session_state['yuklenen_sablon_id']
+                if 'yuklenen_oda_giderleri' in st.session_state:
+                    del st.session_state['yuklenen_oda_giderleri']
+                st.rerun()
+        else:
+            varsayilan_verim = 100.0
+            varsayilan_cikma = 5.0
+            varsayilan_cikma_fiyat = 15.0
+            varsayilan_birinci_fiyat = 45.0
+            varsayilan_kasa = 12.0
+            varsayilan_toplama = "Tabağa Toplama"
+        
         # Ortak parametreler
         st.subheader("🌱 Ortak Üretim Parametreleri")
         col1, col2, col3 = st.columns(3)
         with col1:
-            verim_orani = st.number_input("Verim Oranı (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0, key="sablon_verim")
-            cikma_orani = st.number_input("Çıkma Oranı (%)", min_value=0.0, max_value=100.0, value=5.0, step=1.0, key="sablon_cikma")
+            verim_orani = st.number_input("Verim Oranı (%)", min_value=0.0, max_value=100.0, value=varsayilan_verim, step=1.0, key="sablon_verim")
+            cikma_orani = st.number_input("Çıkma Oranı (%)", min_value=0.0, max_value=100.0, value=varsayilan_cikma, step=1.0, key="sablon_cikma")
         with col2:
-            cikma_satis_fiyati = st.number_input("Çıkma Satış Fiyatı (TL/kg)", min_value=0.0, value=15.0, step=1.0, key="sablon_cikma_fiyat")
-            birinci_kalite_fiyat = st.number_input("1. Kalite Fiyatı (TL/kg)", min_value=0.0, value=45.0, step=1.0, key="sablon_birinci_fiyat")
+            cikma_satis_fiyati = st.number_input("Çıkma Satış Fiyatı (TL/kg)", min_value=0.0, value=varsayilan_cikma_fiyat, step=1.0, key="sablon_cikma_fiyat")
+            birinci_kalite_fiyat = st.number_input("1. Kalite Fiyatı (TL/kg)", min_value=0.0, value=varsayilan_birinci_fiyat, step=1.0, key="sablon_birinci_fiyat")
         with col3:
-            kasa_maliyeti = st.number_input("1 Kasanın Maliyeti (TL)", min_value=0.0, value=12.0, step=1.0, key="sablon_kasa")
-            toplama_yontemi = st.radio("Toplama Yöntemi", ["Tabağa Toplama", "Direk Toplama"], key="sablon_toplama")
+            kasa_maliyeti = st.number_input("1 Kasanın Maliyeti (TL)", min_value=0.0, value=varsayilan_kasa, step=1.0, key="sablon_kasa")
+            toplama_yontemi = st.radio("Toplama Yöntemi", ["Tabağa Toplama", "Direk Toplama"], index=0 if varsayilan_toplama == "Tabağa Toplama" else 1, key="sablon_toplama")
+        
+        # Şablon kaydetme işlemi
+        if kaydet_buton and sablon_adi:
+            conn = get_db_connection()
+            try:
+                # Şablonu kaydet
+                conn.execute("""INSERT INTO gelir_gider_sablonlari 
+                             (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama))
+                sablon_id = conn.lastrowid
+                
+                # Odaya özel giderleri kaydet
+                for oda_id, profil in oda_profilleri.items():
+                    for gider_adi, gider_maliyeti in profil['gider_maliyetleri'].items():
+                        conn.execute("""INSERT INTO sablon_oda_giderleri 
+                                     (sablon_id, oda_id, gider_adi, gider_maliyeti)
+                                     VALUES (?, ?, ?, ?)""",
+                                    (sablon_id, oda_id, gider_adi, gider_maliyeti))
+                
+                conn.commit()
+                st.success(f"✅ '{sablon_adi}' şablonu başarıyla kaydedildi!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Kaydetme hatası: {e}")
+            finally:
+                conn.close()
+        elif kaydet_buton and not sablon_adi:
+            st.warning("⚠️ Şablon adı giriniz!")
         
         st.markdown("---")
         
@@ -3945,16 +4070,30 @@ elif menu == "📊 Gelir-Gider Şablonu":
         st.subheader("💼 Odaya Özel Gider Profilleri")
         st.info("Her oda için gider kalemlerini ve maliyetlerini düzenleyin.")
         
+        # Yüklenen şablondan oda giderlerini al
+        yuklenen_oda_giderleri = {}
+        if 'yuklenen_oda_giderleri' in st.session_state:
+            for gider in st.session_state['yuklenen_oda_giderleri']:
+                oda_id = gider['oda_id']
+                if oda_id not in yuklenen_oda_giderleri:
+                    yuklenen_oda_giderleri[oda_id] = {}
+                yuklenen_oda_giderleri[oda_id][gider['gider_adi']] = gider['gider_maliyeti']
+        
         oda_profilleri = {}
         for _, oda in df_odalar.iterrows():
             with st.expander(f"🏢 {oda['oda_adi']} (Kapasite: {oda['kapasite_kg'] or 0} kg)", expanded=False):
                 st.markdown(f"**Kompost Kapasitesi:** {oda['kapasite_kg'] or 0} kg")
                 
                 if not df_giderler.empty:
+                    # Yüklenen şablondan varsayılan giderleri al
+                    varsayilan_giderler = []
+                    if oda['id'] in yuklenen_oda_giderleri:
+                        varsayilan_giderler = list(yuklenen_oda_giderleri[oda['id']].keys())
+                    
                     secili_giderler = st.multiselect(
                         f"Gider Kalemleri - {oda['oda_adi']}",
                         options=df_giderler['kalem_adi'].tolist(),
-                        default=[],
+                        default=varsayilan_giderler,
                         key=f"gider_{oda['id']}"
                     )
                     
@@ -3963,15 +4102,19 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     if secili_giderler:
                         st.markdown("**Gider Maliyetleri (Odaya Özel):**")
                         for gider in secili_giderler:
-                            varsayilan_fiyat = df_giderler[df_giderler['kalem_adi'] == gider]['birim_fiyat'].iloc[0]
-                            # Kompost kapasitesine göre varsayılan maliyet hesapla
-                            kapasite_orani = (oda['kapasite_kg'] or 0) / 13000.0  # Standart 13 ton kapasite
-                            ayarlanmis_fiyat = varsayilan_fiyat * kapasite_orani if kapasite_orani > 0 else varsayilan_fiyat
+                            # Yüklenen şablondan maliyeti al, yoksa varsayılan hesapla
+                            if oda['id'] in yuklenen_oda_giderleri and gider in yuklenen_oda_giderleri[oda['id']]:
+                                varsayilan_fiyat = yuklenen_oda_giderleri[oda['id']][gider]
+                            else:
+                                varsayilan_fiyat = df_giderler[df_giderler['kalem_adi'] == gider]['birim_fiyat'].iloc[0]
+                                # Kompost kapasitesine göre varsayılan maliyet hesapla
+                                kapasite_orani = (oda['kapasite_kg'] or 0) / 13000.0  # Standart 13 ton kapasite
+                                varsayilan_fiyat = varsayilan_fiyat * kapasite_orani if kapasite_orani > 0 else varsayilan_fiyat
                             
                             gider_maliyeti = st.number_input(
                                 f"{gider} (TL)",
                                 min_value=0.0,
-                                value=ayarlanmis_fiyat,
+                                value=varsayilan_fiyat,
                                 step=10.0,
                                 key=f"gider_maliyet_{oda['id']}_{gider}"
                             )
