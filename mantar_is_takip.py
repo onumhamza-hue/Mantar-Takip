@@ -835,7 +835,7 @@ menu = st.sidebar.radio(
      "🌱 Üretim Takvimi", "📅 İş Planı",
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
-     "📥 Veri Yedekleme"]
+     "📥 Veri Yedekleme", "💵 Gelir Hesaplama"]
 )
 
 st.sidebar.markdown("---")
@@ -3752,6 +3752,157 @@ elif menu == "📥 Veri Yedekleme":
     with col4:
         st.metric("Puantaj Kaydı", _read_sql("SELECT COUNT(*) as c FROM puantaj", conn).iloc[0, 0])
     conn.close()
+
+# Gelir Hesaplama
+elif menu == "💵 Gelir Hesaplama":
+    st.title("💵 Gelir Hesaplama")
+    st.markdown("### Tahmini Kar Hesaplama Aracı")
+    st.info("Kompost miktarı ve verim oranlarına göre tahmini kar hesaplayın.")
+    
+    # Form alanları
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🌱 Üretim Parametreleri")
+        kompost_kg = st.number_input("Kompost Miktarı (kg)", min_value=0.0, value=13000.0, step=100.0)
+        verim_orani = st.number_input("Verim Oranı (%)", min_value=0.0, max_value=100.0, value=100.0, step=1.0)
+        cikma_orani = st.number_input("Çıkma Oranı (%)", min_value=0.0, max_value=100.0, value=5.0, step=1.0)
+        
+        st.subheader("💰 Satış Fiyatları")
+        cikma_satis_fiyati = st.number_input("Çıkma Satış Fiyatı (TL/kg)", min_value=0.0, value=15.0, step=1.0)
+        birinci_kalite_fiyat = st.number_input("1. Kalite Mantar Satış Fiyatı (TL/kg)", min_value=0.0, value=45.0, step=1.0)
+    
+    with col2:
+        st.subheader("📦 Toplama Yöntemi")
+        toplama_yontemi = st.radio("Toplama Yöntemi", ["Tabağa Toplama", "Direk Toplama"])
+        
+        if toplama_yontemi == "Tabağa Toplama":
+            tabak_maliyeti = st.number_input("Tabak Maliyeti (TL/kg)", min_value=0.0, value=2.5, step=0.1)
+            dokum_maliyeti = st.number_input("Döküm Maliyeti (TL/kg)", min_value=0.0, value=1.0, step=0.1)
+        else:
+            tabak_maliyeti = 0.0
+            dokum_maliyeti = 0.0
+    
+    st.markdown("---")
+    
+    # Gider Kalemleri Seçimi
+    st.subheader("💼 Gider Kalemleri")
+    conn = get_db_connection()
+    df_giderler = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1", conn)
+    conn.close()
+    
+    if not df_giderler.empty:
+        st.info("Hesaplamaya dahil edilecek gider kalemlerini seçin:")
+        secili_giderler = st.multiselect(
+            "Gider Kalemleri Seç",
+            options=df_giderler['kalem_adi'].tolist(),
+            default=[],
+            key="gelir_hesaplama_giderler"
+        )
+    else:
+        st.warning("Henüz gider kalemi tanımlanmamış.")
+        secili_giderler = []
+    
+    st.markdown("---")
+    
+    # Hesaplama Butonu
+    if st.button("💵 Tahmini Kar Hesapla", type="primary", use_container_width=True):
+        # Hesaplamalar
+        toplam_verim_kg = kompost_kg * (verim_orani / 100)
+        cikma_kg = toplam_verim_kg * (cikma_orani / 100)
+        birinci_kalite_kg = toplam_verim_kg - cikma_kg
+        
+        # Gelirler
+        cikma_gelir = cikma_kg * cikma_satis_fiyati
+        birinci_kalite_gelir = birinci_kalite_kg * birinci_kalite_fiyat
+        toplam_gelir = cikma_gelir + birinci_kalite_gelir
+        
+        # Toplama Maliyeti
+        if toplama_yontemi == "Tabağa Toplama":
+            toplama_maliyeti = (birinci_kalite_kg * tabak_maliyeti) + (cikma_kg * dokum_maliyeti)
+        else:
+            toplama_maliyeti = 0.0
+        
+        # Seçili Giderler
+        secili_gider_toplam = 0.0
+        gider_detaylari = []
+        if not df_giderler.empty and secili_giderler:
+            for gider in secili_giderler:
+                fiyat = df_giderler[df_giderler['kalem_adi'] == gider]['birim_fiyat'].iloc[0]
+                secili_gider_toplam += fiyat
+                gider_detaylari.append({'Gider': gider, 'Tutar': fiyat})
+        
+        # Toplam Gider
+        toplam_gider = toplama_maliyeti + secili_gider_toplam
+        
+        # Tahmini Kar
+        tahmini_kar = toplam_gelir - toplam_gider
+        kar_orani = (tahmini_kar / toplam_gelir * 100) if toplam_gelir > 0 else 0.0
+        
+        # Sonuçları Göster
+        st.markdown("### 📊 Hesaplama Sonuçları")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Toplam Verim (kg)", f"{toplam_verim_kg:.2f}")
+            st.metric("1. Kalite (kg)", f"{birinci_kalite_kg:.2f}")
+        
+        with col2:
+            st.metric("Çıkma (kg)", f"{cikma_kg:.2f}")
+            st.metric("Toplam Gelir (TL)", f"{toplam_gelir:,.2f}")
+        
+        with col3:
+            st.metric("Toplama Maliyeti (TL)", f"{toplama_maliyeti:,.2f}")
+            st.metric("Gider Toplamı (TL)", f"{secili_gider_toplam:,.2f}")
+        
+        with col4:
+            st.metric("Toplam Gider (TL)", f"{toplam_gider:,.2f}")
+            kar_color = "normal" if tahmini_kar >= 0 else "inverse"
+            st.metric("Tahmini Kar (TL)", f"{tahmini_kar:,.2f}", delta_color=kar_color)
+        
+        st.markdown("---")
+        
+        # Detaylı Breakdown
+        st.subheader("📋 Detaylı Gelir-Gider Breakdown")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 💰 Gelirler")
+            gelir_data = {
+                "Kalem": ["1. Kalite Mantar", "Çıkma Mantar", "TOPLAM GELİR"],
+                "Miktar (kg)": [birinci_kalite_kg, cikma_kg, toplam_verim_kg],
+                "Birim Fiyat (TL/kg)": [birinci_kalite_fiyat, cikma_satis_fiyati, "-"],
+                "Toplam (TL)": [birinci_kalite_gelir, cikma_gelir, toplam_gelir]
+            }
+            st.dataframe(pd.DataFrame(gelir_data), use_container_width=True)
+        
+        with col2:
+            st.markdown("### 💸 Giderler")
+            gider_data = {
+                "Kalem": ["Toplama Maliyeti"] + [g['Gider'] for g in gider_detaylari] + ["TOPLAM GİDER"],
+                "Tutar (TL)": [toplama_maliyeti] + [g['Tutar'] for g in gider_detaylari] + [toplam_gider]
+            }
+            st.dataframe(pd.DataFrame(gider_data), use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Kar Özeti
+        st.subheader("🎯 Kar Özeti")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Tahmini Kar", f"{tahmini_kar:,.2f} TL")
+        
+        with col2:
+            st.metric("Kar Oranı", f"{kar_orani:.2f}%")
+        
+        with col3:
+            if tahmini_kar >= 0:
+                st.success("✅ Karlı Üretim")
+            else:
+                st.error("❌ Zararlı Üretim")
 
 # Footer
 st.markdown("---")
