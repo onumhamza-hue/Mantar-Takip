@@ -4477,7 +4477,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     
                     st.markdown("---")
                     
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         if st.button(f"💾 Güncelle - {sablon['sablon_adi']}", key=f"guncelle_{sablon['id']}", type="primary"):
                             conn = get_db_connection()
@@ -4531,6 +4531,9 @@ elif menu == "📊 Gelir-Gider Şablonu":
                             st.success(f"✅ {sablon['sablon_adi']} şablonu yüklendi! Şablon düzenleme sekmesine geçin.")
                             st.rerun()
                     with col3:
+                        if st.button(f"📊 Hesapla - {sablon['sablon_adi']}", key=f"hesapla_{sablon['id']}", type="secondary"):
+                            st.session_state[f'hesapla_{sablon["id"]}'] = True
+                    with col4:
                         if st.button(f"🗑️ Sil - {sablon['sablon_adi']}", key=f"sil_{sablon['id']}"):
                             conn = get_db_connection()
                             try:
@@ -4544,6 +4547,159 @@ elif menu == "📊 Gelir-Gider Şablonu":
                                 st.error(f"Silme hatası: {e}")
                             finally:
                                 conn.close()
+                    
+                    # Hesaplama sonuçları
+                    if st.session_state.get(f'hesapla_{sablon["id"]}'):
+                        st.markdown("---")
+                        st.markdown("### 📊 Gelir-Gider Hesaplama Sonuçları")
+                        
+                        # Şablon parametrelerini kullan
+                        verim_orani_hesap = duzenleme_verim
+                        cikma_orani_hesap = duzenleme_cikma
+                        cikma_satis_fiyati_hesap = duzenleme_cikma_fiyat
+                        birinci_kalite_fiyati_hesap = duzenleme_birinci_fiyat
+                        kasa_maliyeti_hesap = duzenleme_kasa
+                        toplama_yontemi_hesap = duzenleme_toplama
+                        
+                        toplam_sonuclar = []
+                        toplam_gider_detaylari = {}
+                        
+                        for _, oda in df_odalar.iterrows():
+                            kompost_kg = oda['kapasite_kg'] or 0
+                            
+                            # Verim hesapla
+                            toplam_verim_kg = kompost_kg * (verim_orani_hesap / 100)
+                            cikma_kg = toplam_verim_kg * (cikma_orani_hesap / 100)
+                            birinci_kalite_kg = toplam_verim_kg - cikma_kg
+                            
+                            # Gelirler
+                            cikma_gelir = cikma_kg * cikma_satis_fiyati_hesap
+                            birinci_kalite_gelir = birinci_kalite_kg * birinci_kalite_fiyati_hesap
+                            toplam_gelir = cikma_gelir + birinci_kalite_gelir
+                            
+                            # Toplama Maliyeti
+                            if toplama_yontemi_hesap == "Tabağa Toplama":
+                                kasaya_toplama_maliyeti = kasa_maliyeti_hesap / 5.0
+                                dokum_toplama_maliyeti = kasa_maliyeti_hesap / 9.0
+                                toplama_maliyeti = (birinci_kalite_kg * kasaya_toplama_maliyeti) + (cikma_kg * dokum_toplama_maliyeti)
+                            else:
+                                toplama_maliyeti = 0.0
+                            
+                            # Oda Giderleri
+                            oda_gider_toplam = 0.0
+                            oda_id = oda['id']
+                            if oda_id in sablon_oda_giderleri_dict:
+                                for gider_adi, gider_maliyeti in sablon_oda_giderleri_dict[oda_id].items():
+                                    oda_gider_toplam += gider_maliyeti
+                                    if gider_adi not in toplam_gider_detaylari:
+                                        toplam_gider_detaylari[gider_adi] = 0.0
+                                    toplam_gider_detaylari[gider_adi] += gider_maliyeti
+                            
+                            # Toplam Gider
+                            toplam_gider = toplama_maliyeti + oda_gider_toplam
+                            
+                            # Kar
+                            oda_kar = toplam_gelir - toplam_gider
+                            
+                            toplam_sonuclar.append({
+                                'oda_adi': oda['oda_adi'],
+                                'kompost_kg': kompost_kg,
+                                'toplam_verim_kg': toplam_verim_kg,
+                                'cikma_kg': cikma_kg,
+                                'birinci_kalite_kg': birinci_kalite_kg,
+                                'toplam_gelir': toplam_gelir,
+                                'toplama_maliyeti': toplama_maliyeti,
+                                'oda_gider_toplam': oda_gider_toplam,
+                                'toplam_gider': toplam_gider,
+                                'oda_kar': oda_kar
+                            })
+                        
+                        # Toplamları hesapla
+                        if toplam_sonuclar:
+                            df_sonuclar = pd.DataFrame(toplam_sonuclar)
+                            
+                            toplam_kompost = df_sonuclar['kompost_kg'].sum()
+                            toplam_verim = df_sonuclar['toplam_verim_kg'].sum()
+                            toplam_cikma = df_sonuclar['cikma_kg'].sum()
+                            toplam_birinci = df_sonuclar['birinci_kalite_kg'].sum()
+                            toplam_gelir = df_sonuclar['toplam_gelir'].sum()
+                            toplam_toplama = df_sonuclar['toplama_maliyeti'].sum()
+                            toplam_oda_gider = df_sonuclar['oda_gider_toplam'].sum()
+                            toplam_gider = df_sonuclar['toplam_gider'].sum()
+                            toplam_kar = df_sonuclar['oda_kar'].sum()
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Toplam Kompost", f"{toplam_kompost:,.0f} kg")
+                                st.metric("Toplam Verim", f"{toplam_verim:,.0f} kg")
+                            with col2:
+                                st.metric("Toplam Gelir", f"{toplam_gelir:,.0f} TL")
+                                st.metric("Toplam Gider", f"{toplam_gider:,.0f} TL")
+                            with col3:
+                                kar_color = "normal" if toplam_kar >= 0 else "inverse"
+                                st.metric("Toplam Kar", f"{toplam_kar:,.0f} TL", delta_color=kar_color)
+                                kar_orani = (toplam_kar / toplam_gelir * 100) if toplam_gelir > 0 else 0.0
+                                st.metric("Kar Oranı", f"{kar_orani:.2f}%")
+                            
+                            st.markdown("---")
+                            
+                            # Pasta Grafiği
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown("### 📊 Gider Dağılımı (Pasta Grafiği)")
+                                
+                                gider_data = []
+                                gider_labels = []
+                                
+                                # Toplama maliyeti
+                                if toplam_toplama > 0:
+                                    gider_data.append(toplam_toplama)
+                                    gider_labels.append("Toplama Maliyeti")
+                                
+                                # Oda giderleri
+                                for gider_adi, gider_tutar in toplam_gider_detaylari.items():
+                                    if gider_tutar > 0:
+                                        gider_data.append(gider_tutar)
+                                        gider_labels.append(gider_adi)
+                                
+                                if gider_data:
+                                    fig_pie = px.pie(
+                                        values=gider_data,
+                                        names=gider_labels,
+                                        title="Gider Dağılımı",
+                                        hole=0.3
+                                    )
+                                    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                                    st.plotly_chart(fig_pie, use_container_width=True)
+                                else:
+                                    st.info("Gider verisi bulunmuyor.")
+                            
+                            with col2:
+                                st.markdown("### 📊 Gelir-Gider Karşılaştırması")
+                                
+                                gelir_gider_data = {
+                                    'Kalem': ['Gelir', 'Gider', 'Kar'],
+                                    'Tutar (TL)': [toplam_gelir, toplam_gider, toplam_kar]
+                                }
+                                df_gg = pd.DataFrame(gelir_gider_data)
+                                
+                                fig_bar = px.bar(
+                                    df_gg,
+                                    x='Kalem',
+                                    y='Tutar (TL)',
+                                    title="Gelir-Gider Karşılaştırması",
+                                    color='Kalem',
+                                    color_discrete_map={'Gelir': '#00CC96', 'Gider': '#EF553B', 'Kar': '#636EFA'}
+                                )
+                                st.plotly_chart(fig_bar, use_container_width=True)
+                            
+                            st.markdown("---")
+                            st.markdown("### 📋 Detaylı Oda Sonuçları")
+                            st.dataframe(df_sonuclar[['oda_adi', 'kompost_kg', 'toplam_verim_kg', 'toplam_gelir', 'toplam_gider', 'oda_kar']], use_container_width=True)
+                            
+                            if st.button(f"❌ Hesaplamayı Kapat - {sablon['sablon_adi']}", key=f"kapat_hesapla_{sablon['id']}"):
+                                del st.session_state[f'hesapla_{sablon["id"]}']
+                                st.rerun()
         else:
             st.markdown("---")
             st.subheader("📋 Kayıtlı Şablonlar")
