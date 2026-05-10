@@ -3957,6 +3957,10 @@ elif menu == "📊 Gelir-Gider Şablonu":
         df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
     except Exception:
         # Tablo yoksa oluştur
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         c = conn.cursor()
         try:
             c.execute('''CREATE TABLE IF NOT EXISTS gelir_gider_sablonlari
