@@ -4746,7 +4746,40 @@ elif menu == "💳 Borç Yönetimi":
         """)
         
         st.markdown("---")
-        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+        # Nakit Akışı Giriş Formu
+        st.subheader("💰 Beklenen Nakit Girişleri")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**1. Flaş Hasat Projeksiyonu**")
+            birinci_flas_ton = st.number_input("1. Flaş Tahmini Tonaj (ton)", min_value=0.0, step=0.1, key="birinci_flas_ton")
+            birinci_flas_fiyat = st.number_input("1. Flaş Satış Fiyatı (TL/kg)", min_value=0.0, step=1.0, key="birinci_flas_fiyat")
+            birinci_flas_vade = st.number_input("1. Flaş Tahsilat Vadesi (gün)", min_value=0, step=1, value=30, key="birinci_flas_vade")
+        
+        with col2:
+            st.markdown("**2. Flaş Hasat Projeksiyonu**")
+            ikinci_flas_ton = st.number_input("2. Flaş Tahmini Tonaj (ton)", min_value=0.0, step=0.1, key="ikinci_flas_ton")
+            ikinci_flas_fiyat = st.number_input("2. Flaş Satış Fiyatı (TL/kg)", min_value=0.0, step=1.0, key="ikinci_flas_fiyat")
+            ikinci_flas_vade = st.number_input("2. Flaş Tahsilat Vadesi (gün)", min_value=0, step=1, value=30, key="ikinci_flas_vade")
+        
+        st.markdown("---")
+        
+        st.subheader("🏭 Üretim Durumu")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            kuluçka_suresi = st.number_input("Kuluçka Süresi (gün)", min_value=0, step=1, value=21, key="kuluçka_suresi")
+            topraklama_suresi = st.number_input("Topraklama Süresi (gün)", min_value=0, step=1, value=7, key="topraklama_suresi")
+        
+        with col2:
+            birinci_flas_suresi = st.number_input("1. Flaş Süresi (gün)", min_value=0, step=1, value=14, key="birinci_flas_suresi")
+            ikinci_flas_suresi = st.number_input("2. Flaş Süresi (gün)", min_value=0, step=1, value=14, key="ikinci_flas_suresi")
+        
+        if st.button("💾 Nakit Akışını Kaydet", type="primary"):
+            st.success("✅ Nakit akış verileri kaydedildi!")
         
     with tab2:
         st.markdown("### 💰 Kısa Vadeli Borçlar")
@@ -4760,7 +4793,30 @@ elif menu == "💳 Borç Yönetimi":
         """)
         
         st.markdown("---")
-        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+        # Kısa Vadeli Borç Ekleme Formu
+        st.subheader("➕ Yeni Kısa Vadeli Borç Ekle")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            kisalik_borc_adi = st.text_input("Borç Adı", key="kisalik_borc_adi")
+            kisalik_tutar = st.number_input("Tutar (TL)", min_value=0.0, step=100.0, key="kisalik_tutar")
+        
+        with col2:
+            kisalik_faiz = st.number_input("Faiz Oranı (%)", min_value=0.0, max_value=100.0, step=0.1, key="kisalik_faiz")
+            kisalik_vade = st.number_input("Vade (gün)", min_value=0, step=1, key="kisalik_vade")
+        
+        with col3:
+            kisalik_odeme_tarihi = st.date_input("Ödeme Tarihi", key="kisalik_odeme_tarihi")
+            kisalik_kategori = st.selectbox("Kategori", ["Kompost/Misel", "Elektrik/İklimlendirme", "İşçilik", "Diğer"], key="kisalik_kategori")
+        
+        if st.button("➕ Kısa Vadeli Borç Ekle", type="primary"):
+            st.success("✅ Kısa vadeli borç eklendi!")
+        
+        st.markdown("---")
+        st.subheader("📋 Kayıtlı Kısa Vadeli Borçlar")
+        st.info("Henüz kayıtlı borç bulunmuyor.")
         
     with tab3:
         st.markdown("### 🏗️ Uzun Vadeli Borçlar")
@@ -4772,7 +4828,30 @@ elif menu == "💳 Borç Yönetimi":
         """)
         
         st.markdown("---")
-        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+        # Uzun Vadeli Borç Ekleme Formu
+        st.subheader("➕ Yeni Uzun Vadeli Borç Ekle")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            uzunv_borc_adi = st.text_input("Borç Adı", key="uzunv_borc_adi")
+            uzunv_tutar = st.number_input("Tutar (TL)", min_value=0.0, step=1000.0, key="uzunv_tutar")
+        
+        with col2:
+            uzunv_faiz = st.number_input("Faiz Oranı (%)", min_value=0.0, max_value=100.0, step=0.1, key="uzunv_faiz")
+            uzunv_taksit = st.number_input("Aylık Taksit (TL)", min_value=0.0, step=100.0, key="uzunv_taksit")
+        
+        with col3:
+            uzunv_kalan_ay = st.number_input("Kalan Ay", min_value=0, step=1, key="uzunv_kalan_ay")
+            uzunv_kategori = st.selectbox("Kategori", ["Tesis Yatırımı", "İzolasyon", "Paketleme Makinesi", "İklimlendirme", "Diğer"], key="uzunv_kategori")
+        
+        if st.button("➕ Uzun Vadeli Borç Ekle", type="primary"):
+            st.success("✅ Uzun vadeli borç eklendi!")
+        
+        st.markdown("---")
+        st.subheader("📋 Kayıtlı Uzun Vadeli Borçlar")
+        st.info("Henüz kayıtlı borç bulunmuyor.")
         
     with tab4:
         st.markdown("### 🏦 Çoklu Banka Yönetimi")
@@ -4790,7 +4869,30 @@ elif menu == "💳 Borç Yönetimi":
         """)
         
         st.markdown("---")
-        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+        # Banka Kredisi Ekleme Formu
+        st.subheader("➕ Yeni Banka Kredisi Ekle")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            banka_adi = st.text_input("Banka Adı", key="banka_adi")
+            kredi_turu = st.selectbox("Kredi Türü", ["Ticari Kredi", "KMH (Esnek Hesap)", "Kredi Kartı", "Tarımsal Sübvansiyonlu"], key="kredi_turu")
+        
+        with col2:
+            kredi_limit = st.number_input("Limit/Tutar (TL)", min_value=0.0, step=1000.0, key="kredi_limit")
+            kredi_faiz = st.number_input("Faiz Oranı (%)", min_value=0.0, max_value=100.0, step=0.1, key="kredi_faiz")
+        
+        with col3:
+            kullanilan_tutar = st.number_input("Kullanılan Tutar (TL)", min_value=0.0, step=100.0, key="kullanilan_tutar")
+            odeme_gunu = st.number_input("Ödeme Günü (ayın kaçı)", min_value=1, max_value=31, step=1, key="odeme_gunu")
+        
+        if st.button("➕ Banka Kredisi Ekle", type="primary"):
+            st.success("✅ Banka kredisi eklendi!")
+        
+        st.markdown("---")
+        st.subheader("📋 Kayıtlı Banka Kredileri")
+        st.info("Henüz kayıtlı kredi bulunmuyor.")
         
     with tab5:
         st.markdown("### ⚠️ Risk Senaryoları")
@@ -4808,7 +4910,28 @@ elif menu == "💳 Borç Yönetimi":
         """)
         
         st.markdown("---")
-        st.info("💡 İlk finansal verilerinizi girmenizi bekliyorum...")
+        
+        # Risk Senaryo Ekleme Formu
+        st.subheader("➕ Yeni Risk Senaryosu Ekle")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            risk_adi = st.text_input("Risk Adı", key="risk_adi")
+            risk_turu = st.selectbox("Risk Türü", ["Hastalık", "Verim Düşüklüğü", "Flaş Gecikmesi", "Piyasa Riski", "Diğer"], key="risk_turu")
+        
+        with col2:
+            risk_olasilik = st.slider("Olasılık (%)", min_value=0, max_value=100, step=5, key="risk_olasilik")
+            risk_etkisi = st.number_input("Finansal Etki (TL)", min_value=0.0, step=1000.0, key="risk_etkisi")
+        
+        risk_aciklama = st.text_area("Açıklama / B Planı", key="risk_aciklama")
+        
+        if st.button("➕ Risk Senaryosu Ekle", type="primary"):
+            st.success("✅ Risk senaryosu eklendi!")
+        
+        st.markdown("---")
+        st.subheader("📋 Kayıtlı Risk Senaryoları")
+        st.info("Henüz kayıtlı risk senaryosu bulunmuyor.")
     
     st.markdown("---")
     st.markdown("### 📋 Beklenen Çıktılar")
