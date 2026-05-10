@@ -3991,15 +3991,11 @@ elif menu == "📊 Gelir-Gider Şablonu":
             df_sablonlar = pd.DataFrame()
     conn.close()
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         sablon_adi = st.text_input("Şablon Adı", key="yeni_sablon_adi")
     with col2:
         aciklama = st.text_input("Açıklama (Opsiyonel)", key="yeni_sablon_aciklama")
-    with col3:
-        st.write("")
-        st.write("")
-        kaydet_buton = st.button("💾 Şablonu Kaydet", type="primary", key="sablon_kaydet")
     
     # Şablon Listesi
     if not df_sablonlar.empty:
@@ -4173,6 +4169,11 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     }
         
         st.markdown("---")
+        
+        # Şablon Kaydetme Butonu
+        st.subheader("💾 Şablonu Kaydet")
+        st.info("Tüm parametreleri ve oda giderlerini düzenledikten sonra kaydet butonuna tıklayın.")
+        kaydet_buton = st.button("💾 Şablonu Kaydet", type="primary", use_container_width=True, key="sablon_kaydet")
         
         # Şablon kaydetme işlemi (oda_profilleri dolduktan sonra)
         if kaydet_buton and sablon_adi:
