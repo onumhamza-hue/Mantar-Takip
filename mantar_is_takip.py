@@ -4330,7 +4330,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center'>
-        <p>🍄 Mantar Üretimi İş Takip Sistemi v1.0 | © 2026</p>
+        <p>Mantar Üretimi İş Takip Sistemi v1.0 | © 2026</p>
     </div>
     """,
     unsafe_allow_html=True
