@@ -3954,7 +3954,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
     st.subheader("💾 Şablon Yönetimi")
     conn = get_db_connection()
     try:
-        df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
+        df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
     except Exception:
         # Tablo yoksa oluştur
         try:
@@ -3984,7 +3984,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                           FOREIGN KEY (sablon_id) REFERENCES gelir_gider_sablonlari(id) ON DELETE CASCADE,
                           FOREIGN KEY (oda_id) REFERENCES odalar(id))''')
             conn.commit()
-            df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
+            df_sablonlar = _read_sql("SELECT id, sablon_adi, verim_orani, cikma_orani, cikma_satis_fiyati, birinci_kalite_fiyat, kasa_maliyeti, toplama_yontemi, aciklama, olusturma_tarihi FROM gelir_gider_sablonlari ORDER BY olusturma_tarihi DESC", conn)
         except Exception as e:
             st.error(f"Tablo oluşturma hatası: {e}")
             df_sablonlar = pd.DataFrame()
@@ -4014,7 +4014,7 @@ elif menu == "📊 Gelir-Gider Şablonu":
                     st.metric("Kasa Maliyeti", f"{sablon['kasa_maliyeti']} TL")
                     st.metric("Toplama Yöntemi", sablon['toplama_yontemi'])
                 
-                if sablon['aciklama']:
+                if 'aciklama' in sablon and sablon['aciklama']:
                     st.info(f"Açıklama: {sablon['aciklama']}")
                 
                 col1, col2 = st.columns(2)
