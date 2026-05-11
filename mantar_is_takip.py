@@ -5060,6 +5060,37 @@ elif menu == "💳 Borç Yönetimi":
             st.subheader("📋 Kayıtlı Kısa Vadeli Borçlar")
             if not df_kisalik.empty:
                 st.dataframe(df_kisalik.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+                
+                # Borç Avalanche Hesaplayıcı
+                st.markdown("---")
+                st.subheader("🎯 Borç Avalanche Hesaplayıcı")
+                st.info("Borç Avalanche yöntemi: En yüksek faiz oranlı borçtan başlayarak ödeme yaparak toplam faiz maliyetini minimize eder")
+                
+                if not df_kisalik.empty:
+                    # Faiz oranına göre sırala (en yüksek faiz önce)
+                    df_kisalik_sorted = df_kisalik.sort_values(by='faiz_orani', ascending=False)
+                    
+                    toplam_borc = df_kisalik['tutar'].sum()
+                    ortalama_faiz = (df_kisalik['tutar'] * df_kisalik['faiz_orani'] / 100).sum() / toplam_borc * 100 if toplam_borc > 0 else 0
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Toplam Borç", f"{toplam_borc:,.0f} TL")
+                        st.metric("Ortalama Faiz", f"{ortalama_faiz:.2f}%")
+                    with col2:
+                        en_yuksek_faiz = df_kisalik_sorted.iloc[0]
+                        st.metric("En Yüksek Faiz", f"{en_yuksek_faiz['faiz_orani']:.1f}%")
+                        st.metric("Öncelikli Borç", en_yuksek_faiz['borc_adi'])
+                    with col3:
+                        aylik_faiz = toplam_borc * ortalama_faiz / 100 / 12
+                        st.metric("Aylık Faiz Maliyeti", f"{aylik_faiz:,.0f} TL")
+                        st.metric("Yıllık Faiz Maliyeti", f"{aylik_faiz * 12:,.0f} TL")
+                    
+                    st.markdown("---")
+                    st.markdown("**Ödeme Öncelik Sırası (Avalanche Yöntemi):**")
+                    for idx, row in df_kisalik_sorted.iterrows():
+                        aylik_faiz_borc = row['tutar'] * row['faiz_orani'] / 100 / 12
+                        st.markdown(f"**{row['faiz_orani']:.1f}%** - {row['borc_adi']}: {row['tutar']:,.0f} TL (Aylık faiz: {aylik_faiz_borc:,.0f} TL)")
             else:
                 st.info("Henüz kayıtlı borç bulunmuyor.")
         except Exception as e:
@@ -5137,6 +5168,37 @@ elif menu == "💳 Borç Yönetimi":
             st.subheader("📋 Kayıtlı Uzun Vadeli Borçlar")
             if not df_uzunv.empty:
                 st.dataframe(df_uzunv.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+                
+                # Borç Avalanche Hesaplayıcı
+                st.markdown("---")
+                st.subheader("🎯 Borç Avalanche Hesaplayıcı")
+                st.info("Borç Avalanche yöntemi: En yüksek faiz oranlı borçtan başlayarak ödeme yaparak toplam faiz maliyetini minimize eder")
+                
+                # Faiz oranına göre sırala (en yüksek faiz önce)
+                df_uzunv_sorted = df_uzunv.sort_values(by='faiz_orani', ascending=False)
+                
+                toplam_borc = df_uzunv['tutar'].sum()
+                toplam_kalan_ay = df_uzunv['kalan_ay'].sum()
+                toplam_aylik_taksit = df_uzunv['aylik_taksit'].sum()
+                ortalama_faiz = (df_uzunv['tutar'] * df_uzunv['faiz_orani'] / 100).sum() / toplam_borc * 100 if toplam_borc > 0 else 0
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Toplam Borç", f"{toplam_borc:,.0f} TL")
+                    st.metric("Ortalama Faiz", f"{ortalama_faiz:.2f}%")
+                with col2:
+                    st.metric("Aylık Toplam Taksit", f"{toplam_aylik_taksit:,.0f} TL")
+                    st.metric("Kalan Ödeme Süresi", f"{toplam_kalan_ay} ay")
+                with col3:
+                    kalan_borc = toplam_aylik_taksit * toplam_kalan_ay
+                    st.metric("Kalan Toplam Ödeme", f"{kalan_borc:,.0f} TL")
+                    st.metric("Toplam Faiz Maliyeti", f"{kalan_borc - toplam_borc:,.0f} TL")
+                
+                st.markdown("---")
+                st.markdown("**Ödeme Öncelik Sırası (Avalanche Yöntemi):**")
+                for idx, row in df_uzunv_sorted.iterrows():
+                    kalan_odeme = row['aylik_taksit'] * row['kalan_ay']
+                    st.markdown(f"**{row['faiz_orani']:.1f}%** - {row['borc_adi']}: {row['tutar']:,.0f} TL (Kalan: {kalan_odeme:,.0f} TL, {row['kalan_ay']} ay)")
             else:
                 st.info("Henüz kayıtlı borç bulunmuyor.")
         except Exception as e:
