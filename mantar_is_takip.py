@@ -5244,6 +5244,46 @@ elif menu == "💳 Borç Yönetimi":
                 for idx, row in df_uzunv_sorted.iterrows():
                     kalan_odeme = row['aylik_taksit'] * row['kalan_ay']
                     st.markdown(f"**{row['faiz_orani']:.1f}%** - {row['borc_adi']}: {row['tutar']:,.0f} TL (Kalan: {kalan_odeme:,.0f} TL, {row['kalan_ay']} ay)")
+                
+                # Üretim Döngüsü ile Ödeme Planı
+                st.markdown("---")
+                st.subheader("📅 Üretim Döngüsü ile Ödeme Planı")
+                st.info("Ödeme tarihlerini üretim hasat dönemleriyle koordine edin")
+                
+                # Nakit akışı verilerini çek
+                conn = get_db_connection()
+                try:
+                    df_nakit = _read_sql("SELECT * FROM nakit_akisi ORDER BY olusturma_tarihi DESC LIMIT 1", conn)
+                    conn.close()
+                    
+                    if not df_nakit.empty:
+                        row_nakit = df_nakit.iloc[0]
+                        
+                        # Hasat tahsilat tarihleri
+                        birinci_flas_tahsilat_gun = row_nakit['kulucka_suresi'] + row_nakit['topraklama_suresi'] + row_nakit['birinci_flas_suresi'] + row_nakit['birinci_flas_vade']
+                        ikinci_flas_tahsilat_gun = row_nakit['kulucka_suresi'] + row_nakit['topraklama_suresi'] + row_nakit['birinci_flas_suresi'] + row_nakit['ikinci_flas_suresi'] + row_nakit['ikinci_flas_vade']
+                        
+                        # Gelir projeksiyonu
+                        birinci_flas_gelir = row_nakit['birinci_flas_ton'] * 1000 * row_nakit['birinci_flas_fiyat']
+                        ikinci_flas_gelir = row_nakit['ikinci_flas_ton'] * 1000 * row_nakit['ikinci_flas_fiyat']
+                        
+                        st.markdown("**Hasat Tahsilat Zamanlaması:**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("1. Flaş Tahsilat", f"{birinci_flas_tahsilat_gun} gün sonra", f"{birinci_flas_gelir:,.0f} TL")
+                        with col2:
+                            st.metric("2. Flaş Tahsilat", f"{ikinci_flas_tahsilat_gun} gün sonra", f"{ikinci_flas_gelir:,.0f} TL")
+                        
+                        st.markdown("---")
+                        st.markdown("**Öneri:** Kısa vadeli borç ödemelerini hasat tahsilat tarihlerine (gün {birinci_flas_tahsilat_gun} ve gün {ikinci_flas_tahsilat_gun}) göre planlayın.")
+                        st.markdown(f"- Aylık taksit: {toplam_aylik_taksit:,.0f} TL")
+                        st.markdown(f"- 1. Flaş tahsilatından sonra: {birinci_flas_gelir:,.0f} TL mevcut olacak")
+                        st.markdown(f"- 2. Flaş tahsilatından sonra: {ikinci_flas_gelir:,.0f} TL mevcut olacak")
+                        st.markdown(f"- Toplam tahsilat: {birinci_flas_gelir + ikinci_flas_gelir:,.0f} TL")
+                        st.markdown(f"- Bu tutarla {int((birinci_flas_gelir + ikinci_flas_gelir) / toplam_aylik_taksit)} aylık taksit ödenebilir")
+                except Exception as e:
+                    conn.close()
+                    st.info("Üretim döngüsü verisi bulunmuyor.")
             else:
                 st.info("Henüz kayıtlı borç bulunmuyor.")
         except Exception as e:
