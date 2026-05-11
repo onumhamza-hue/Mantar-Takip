@@ -4983,6 +4983,51 @@ elif menu == "💳 Borç Yönetimi":
                 st.markdown("---")
                 st.subheader("📋 Kayıtlı Nakit Akışı Verileri")
                 st.dataframe(df_nakit.drop(columns=['id', 'olusturma_tarihi']), use_container_width=True)
+                
+                # Nakit Akışı Analizi
+                st.markdown("---")
+                st.subheader("💵 Nakit Akışı Analizi")
+                
+                row = df_nakit.iloc[0]
+                
+                # Gelir projeksiyonu
+                birinci_flas_gelir = row['birinci_flas_ton'] * 1000 * row['birinci_flas_fiyat']
+                ikinci_flas_gelir = row['ikinci_flas_ton'] * 1000 * row['ikinci_flas_fiyat']
+                toplam_beklenen_gelir = birinci_flas_gelir + ikinci_flas_gelir
+                
+                # Üretim süresi
+                toplam_uretim_suresi = row['kulucka_suresi'] + row['topraklama_suresi'] + row['birinci_flas_suresi'] + row['ikinci_flas_suresi']
+                
+                # Tahsilat zamanlaması
+                birinci_flas_tahsilat_gun = row['kulucka_suresi'] + row['topraklama_suresi'] + row['birinci_flas_suresi'] + row['birinci_flas_vade']
+                ikinci_flas_tahsilat_gun = row['kulucka_suresi'] + row['topraklama_suresi'] + row['birinci_flas_suresi'] + row['ikinci_flas_suresi'] + row['ikinci_flas_vade']
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("1. Flaş Geliri", f"{birinci_flas_gelir:,.0f} TL")
+                    st.metric("2. Flaş Geliri", f"{ikinci_flas_gelir:,.0f} TL")
+                with col2:
+                    st.metric("Toplam Beklenen Gelir", f"{toplam_beklenen_gelir:,.0f} TL")
+                    st.metric("Toplam Üretim Süresi", f"{toplam_uretim_suresi} gün")
+                with col3:
+                    st.metric("1. Flaş Tahsilat", f"{birinci_flas_tahsilat_gun} gün sonra")
+                    st.metric("2. Flaş Tahsilat", f"{ikinci_flas_tahsilat_gun} gün sonra")
+                
+                st.markdown("---")
+                st.markdown("**Nakit Akış Zaman Çizelgesi:**")
+                st.markdown(f"- **Gün 0**: Kompost/Misel alımı (peşin ödeme)")
+                st.markdown(f"- **Gün {row['kulucka_suresi']}**: Kuluçka tamamlandı")
+                st.markdown(f"- **Gün {row['kulucka_suresi'] + row['topraklama_suresi']}**: Topraklama tamamlandı")
+                st.markdown(f"- **Gün {row['kulucka_suresi'] + row['topraklama_suresi'] + row['birinci_flas_suresi']}**: 1. Flaş hasat")
+                st.markdown(f"- **Gün {birinci_flas_tahsilat_gun}**: 1. Flaş tahsilatı ({birinci_flas_gelir:,.0f} TL)")
+                st.markdown(f"- **Gün {row['kulucka_suresi'] + row['topraklama_suresi'] + row['birinci_flas_suresi'] + row['ikinci_flas_suresi']}**: 2. Flaş hasat")
+                st.markdown(f"- **Gün {ikinci_flas_tahsilat_gun}**: 2. Flaş tahsilatı ({ikinci_flas_gelir:,.0f} TL)")
+                
+                st.markdown("---")
+                st.markdown("**Nakit Dönüşüm Süresi (CCC):**")
+                nakit_donusum = ikinci_flas_tahsilat_gun
+                st.metric("Nakit Dönüşüm Süresi", f"{nakit_donusum} gün")
+                st.info(f"Kompost alımından 2. flaş tahsilatına kadar geçen süre: {nakit_donusum} gün")
         except Exception as e:
             st.info("Henüz kayıtlı nakit akışı verisi bulunmuyor.")
         
