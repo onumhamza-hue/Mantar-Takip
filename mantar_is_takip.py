@@ -4827,8 +4827,61 @@ elif menu == "💳 Borç Yönetimi":
         
         st.markdown("---")
         
+        # Gerçek Üretim Verilerini Çek
+        st.subheader("📈 Gerçek Üretim ve Satış Verileri")
+        conn = get_db_connection()
+        
+        try:
+            # Günlük hasat verileri
+            df_hasat = _read_sql("SELECT * FROM gunluk_hasat ORDER BY tarih DESC LIMIT 30", conn)
+            
+            # Satış verileri
+            df_satis = _read_sql("SELECT * FROM satislar ORDER BY tarih DESC LIMIT 30", conn)
+            
+            # Odalar
+            df_odalar = _read_sql("SELECT * FROM odalar WHERE durum='Aktif'", conn)
+            
+            conn.close()
+            
+            if not df_hasat.empty:
+                st.markdown("**Son 30 Gün Hasat Verileri**")
+                st.dataframe(df_hasat[['tarih', 'oda_id', 'hasat_kg', 'kalite', 'aciklama']], use_container_width=True)
+                
+                # Toplam hasat
+                toplam_hasat = df_hasat['hasat_kg'].sum()
+                st.metric("Toplam Hasat (30 Gün)", f"{toplam_hasat:,.0f} kg")
+            else:
+                st.info("Hasat verisi bulunmuyor.")
+            
+            st.markdown("---")
+            
+            if not df_satis.empty:
+                st.markdown("**Son 30 Gün Satış Verileri**")
+                st.dataframe(df_satis[['tarih', 'miktar_kg', 'birim_fiyat', 'alan_kisi', 'aciklama']], use_container_width=True)
+                
+                # Toplam satış
+                df_satis['toplam_tutar'] = df_satis['miktar_kg'] * df_satis['birim_fiyat']
+                toplam_satis = df_satis['toplam_tutar'].sum()
+                st.metric("Toplam Satış (30 Gün)", f"{toplam_satis:,.0f} TL")
+            else:
+                st.info("Satış verisi bulunmuyor.")
+            
+            st.markdown("---")
+            
+            if not df_odalar.empty:
+                st.markdown("**Aktif Odalar**")
+                st.dataframe(df_odalar[['oda_adi', 'alan_m2', 'kapasite_kg', 'durum']], use_container_width=True)
+            else:
+                st.info("Oda verisi bulunmuyor.")
+        
+        except Exception as e:
+            st.error(f"Veri çekme hatası: {e}")
+            conn.close()
+        
+        st.markdown("---")
+        
         # Nakit Akışı Giriş Formu
-        st.subheader("💰 Beklenen Nakit Girişleri")
+        st.subheader("💰 Beklenen Nakit Girişleri (Projeksiyon)")
         
         col1, col2 = st.columns(2)
         
@@ -4858,7 +4911,29 @@ elif menu == "💳 Borç Yönetimi":
             birinci_flas_suresi = st.number_input("1. Flaş Süresi (gün)", min_value=0, step=1, value=14, key="birinci_flas_suresi")
             ikinci_flas_suresi = st.number_input("2. Flaş Süresi (gün)", min_value=0, step=1, value=14, key="ikinci_flas_suresi")
         
-        if st.button("💾 Nakit Akışını Kaydet", type="primary"):
+        # Nakit Akışı Hesaplama
+        if st.button("📊 Nakit Akışını Hesapla", type="primary"):
+            birinci_flas_gelir = birinci_flas_ton * 1000 * birinci_flas_fiyat
+            ikinci_flas_gelir = ikinci_flas_ton * 1000 * ikinci_flas_fiyat
+            toplam_beklenen_gelir = birinci_flas_gelir + ikinci_flas_gelir
+            
+            toplam_uretim_suresi = kuluçka_suresi + topraklama_suresi + birinci_flas_suresi + ikinci_flas_suresi
+            
+            st.markdown("---")
+            st.subheader("💵 Nakit Akışı Projeksiyonu")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("1. Flaş Geliri", f"{birinci_flas_gelir:,.0f} TL")
+                st.metric("2. Flaş Geliri", f"{ikinci_flas_gelir:,.0f} TL")
+            with col2:
+                st.metric("Toplam Beklenen Gelir", f"{toplam_beklenen_gelir:,.0f} TL")
+                st.metric("Toplam Üretim Süresi", f"{toplam_uretim_suresi} gün")
+            with col3:
+                st.metric("1. Flaş Tahsilat", f"{birinci_flas_vade} gün sonra")
+                st.metric("2. Flaş Tahsilat", f"{ikinci_flas_vade} gün sonra")
+        
+        if st.button("💾 Nakit Akışını Kaydet", type="secondary"):
             conn = get_db_connection()
             try:
                 c = conn.cursor()
