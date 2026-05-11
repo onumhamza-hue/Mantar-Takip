@@ -869,7 +869,7 @@ def _ensure_borc_yonetimi_tables():
         
         # Kısa Vadeli Borçlar tablosu
         c.execute('''CREATE TABLE IF NOT EXISTS kisalik_borclar
-                     (id SERIAL PRIMARY KEY,
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       borc_adi TEXT NOT NULL,
                       tutar REAL NOT NULL,
                       faiz_orani REAL NOT NULL,
@@ -880,7 +880,7 @@ def _ensure_borc_yonetimi_tables():
         
         # Uzun Vadeli Borçlar tablosu
         c.execute('''CREATE TABLE IF NOT EXISTS uzunv_borclar
-                     (id SERIAL PRIMARY KEY,
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       borc_adi TEXT NOT NULL,
                       tutar REAL NOT NULL,
                       faiz_orani REAL NOT NULL,
@@ -891,7 +891,7 @@ def _ensure_borc_yonetimi_tables():
         
         # Banka Kredileri tablosu
         c.execute('''CREATE TABLE IF NOT EXISTS banka_kredileri
-                     (id SERIAL PRIMARY KEY,
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       banka_adi TEXT NOT NULL,
                       kredi_turu TEXT NOT NULL,
                       kredi_limit REAL NOT NULL,
@@ -902,7 +902,7 @@ def _ensure_borc_yonetimi_tables():
         
         # Risk Senaryoları tablosu
         c.execute('''CREATE TABLE IF NOT EXISTS risk_senaryolari
-                     (id SERIAL PRIMARY KEY,
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       risk_adi TEXT NOT NULL,
                       risk_turu TEXT NOT NULL,
                       olasilik REAL NOT NULL,
@@ -912,7 +912,7 @@ def _ensure_borc_yonetimi_tables():
         
         # Nakit Akışı tablosu
         c.execute('''CREATE TABLE IF NOT EXISTS nakit_akisi
-                     (id SERIAL PRIMARY KEY,
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       birinci_flas_ton REAL,
                       birinci_flas_fiyat REAL,
                       birinci_flas_vade INTEGER,
@@ -4862,15 +4862,9 @@ elif menu == "💳 Borç Yönetimi":
             conn = get_db_connection()
             try:
                 c = conn.cursor()
-                # Tabloyu kontrol et ve yoksa oluştur
-                try:
-                    c.execute("DROP TABLE IF EXISTS nakit_akisi")
-                    conn.commit()
-                except Exception:
-                    pass
-                
-                c.execute('''CREATE TABLE nakit_akisi
-                             (id SERIAL PRIMARY KEY,
+                # Tabloyu oluştur (hem SQLite hem PostgreSQL için uyumlu)
+                c.execute('''CREATE TABLE IF NOT EXISTS nakit_akisi
+                             (id INTEGER PRIMARY KEY AUTOINCREMENT,
                               birinci_flas_ton REAL,
                               birinci_flas_fiyat REAL,
                               birinci_flas_vade INTEGER,
@@ -4954,7 +4948,7 @@ elif menu == "💳 Borç Yönetimi":
                     # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
                     c.execute('''CREATE TABLE IF NOT EXISTS kisalik_borclar
-                                 (id SERIAL PRIMARY KEY,
+                                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                   borc_adi TEXT NOT NULL,
                                   tutar REAL NOT NULL,
                                   faiz_orani REAL NOT NULL,
@@ -5031,7 +5025,7 @@ elif menu == "💳 Borç Yönetimi":
                     # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
                     c.execute('''CREATE TABLE IF NOT EXISTS uzunv_borclar
-                                 (id SERIAL PRIMARY KEY,
+                                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                   borc_adi TEXT NOT NULL,
                                   tutar REAL NOT NULL,
                                   faiz_orani REAL NOT NULL,
@@ -5114,7 +5108,7 @@ elif menu == "💳 Borç Yönetimi":
                     # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
                     c.execute('''CREATE TABLE IF NOT EXISTS banka_kredileri
-                                 (id SERIAL PRIMARY KEY,
+                                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                   banka_adi TEXT NOT NULL,
                                   kredi_turu TEXT NOT NULL,
                                   kredi_limit REAL NOT NULL,
@@ -5195,7 +5189,7 @@ elif menu == "💳 Borç Yönetimi":
                     # Tabloyu kontrol et ve yoksa oluştur
                     c = conn.cursor()
                     c.execute('''CREATE TABLE IF NOT EXISTS risk_senaryolari
-                                 (id SERIAL PRIMARY KEY,
+                                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
                                   risk_adi TEXT NOT NULL,
                                   risk_turu TEXT NOT NULL,
                                   olasilik REAL NOT NULL,
