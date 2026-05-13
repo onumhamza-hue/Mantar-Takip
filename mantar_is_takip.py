@@ -34,8 +34,10 @@ EVRE_SURELERI = {
     'flash2_tarihi': {'sonraki': 'oda_bosaltma_tarihi', 'gun_sonra': 5},
 }
 
+# ── Performans Optimizasyonları: Data Caching ─────────────────────────────────────
+@st.cache_data(ttl=300, max_entries=10)
 def _calc_tahmini_tarihler(uretim_tarihleri):
-    """Üretim takvimindeki bilinen tarihlerden diğer evrelerin tahmini tarihlerini hesapla"""
+    """Üretim takvimindeki bilinen tarihlerden diğer evrelerin tahmini tarihlerini hesapla - Cache'lenmiş"""
     tahmini_tarihler = {}
     
     # Önce bilinen tarihleri kopyala
@@ -375,32 +377,28 @@ def _read_sql(sql, conn, params=None):
     return pd.read_sql(sql, conn, params=params)
 
 # ── Ultra Performans: Agresif Cache'lenmiş veriler ─────────────────────────────────
-@st.cache_data(ttl=300)  # 5 dakika cache
-@st.fragment
+@st.cache_data(ttl=300, max_entries=10)
 def _cached_odalar():
     conn = get_db_connection()
     df = _read_sql("SELECT id, oda_adi FROM odalar ORDER BY oda_adi", conn)
     conn.close()
     return df
 
-@st.cache_data(ttl=300)  # 5 dakika cache
-@st.fragment
+@st.cache_data(ttl=300, max_entries=10)
 def _cached_odalar_aktif():
     conn = get_db_connection()
     df = _read_sql("SELECT id, oda_adi FROM odalar WHERE durum='Aktif' ORDER BY oda_adi", conn)
     conn.close()
     return df
 
-@st.cache_data(ttl=600)  # 10 dakika cache
-@st.fragment
+@st.cache_data(ttl=600, max_entries=10)
 def _cached_gider_kalemleri():
     conn = get_db_connection()
     df = _read_sql("SELECT kalem_adi, birim_fiyat FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
     conn.close()
     return df
 
-@st.cache_data(ttl=300)  # 5 dakika cache
-@st.fragment
+@st.cache_data(ttl=300, max_entries=10)
 def _cached_cariler():
     conn = get_db_connection()
     df = _read_sql("SELECT id, cari_adi FROM cariler WHERE aktif=1 ORDER BY cari_adi", conn)
@@ -408,8 +406,7 @@ def _cached_cariler():
     return df
 
 # Ana sayfa metrikleri için cache
-@st.cache_data(ttl=60)  # 1 dakika cache
-@st.fragment
+@st.cache_data(ttl=60, max_entries=5)
 def _cached_anasayfa_metrikleri():
     conn = get_db_connection()
     try:
@@ -421,8 +418,7 @@ def _cached_anasayfa_metrikleri():
         conn.close()
 
 # Giderler için cache
-@st.cache_data(ttl=300)
-@st.fragment
+@st.cache_data(ttl=300, max_entries=10)
 def _cached_giderler():
     conn = get_db_connection()
     df = _read_sql("SELECT * FROM gider_kalemleri WHERE aktif=1 ORDER BY kalem_adi", conn)
@@ -430,8 +426,7 @@ def _cached_giderler():
     return df
 
 # Odalar için cache
-@st.cache_data(ttl=300)
-@st.fragment
+@st.cache_data(ttl=300, max_entries=10)
 def _cached_tum_odalar():
     conn = get_db_connection()
     df = _read_sql("SELECT * FROM odalar ORDER BY oda_adi", conn)
@@ -439,8 +434,7 @@ def _cached_tum_odalar():
     return df
 
 # Hasat verileri için cache
-@st.cache_data(ttl=120)
-@st.fragment
+@st.cache_data(ttl=120, max_entries=20)
 def _cached_hasat_verileri(filtre_oda, tarih_baslangic, tarih_bitis):
     conn = get_db_connection()
     if filtre_oda == "Tümü":
@@ -463,8 +457,7 @@ def _cached_hasat_verileri(filtre_oda, tarih_baslangic, tarih_bitis):
     return df
 
 # İklim verileri için cache
-@st.cache_data(ttl=60)
-@st.fragment
+@st.cache_data(ttl=60, max_entries=30)
 def _cached_iklim_verileri(secili_oda, gun_sayisi):
     conn = get_db_connection()
     if gun_sayisi == "Tümü":
@@ -825,6 +818,7 @@ def _ensure_is_plani_table():
 _ensure_is_plani_table()
 
 # Gelir-Gider Şablonu tablolarını garanti oluştur
+@st.cache_resource
 def _ensure_gelir_gider_sablonu_tables():
     try:
         conn = get_db_connection()
@@ -862,6 +856,7 @@ def _ensure_gelir_gider_sablonu_tables():
 _ensure_gelir_gider_sablonu_tables()
 
 # Borç Yönetimi tablolarını garanti oluştur
+@st.cache_resource
 def _ensure_borc_yonetimi_tables():
     try:
         conn = get_db_connection()
