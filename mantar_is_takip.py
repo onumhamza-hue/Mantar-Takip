@@ -941,10 +941,6 @@ _ensure_borc_yonetimi_tables()
 st.sidebar.title("🍄 Mantar İş Takip")
 st.sidebar.markdown("---")
 
-# Session state for menu selection to prevent unnecessary reruns
-if "menu" not in st.session_state:
-    st.session_state.menu = "🏠 Ana Sayfa"
-
 menu = st.sidebar.radio(
     "Menü",
     ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
@@ -953,23 +949,8 @@ menu = st.sidebar.radio(
      "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
      "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
      "📥 Veri Yedekleme", "💵 Gelir Hesaplama", "📊 Gelir-Gider Şablonu",
-     "💳 Borç Yönetimi"],
-    index=["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
-     "📋 Oda Bilgi Kartı",
-     "🌱 Üretim Takvimi", "📅 İş Planı",
-     "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
-     "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
-     "📥 Veri Yedekleme", "💵 Gelir Hesaplama", "📊 Gelir-Gider Şablonu",
-     "💳 Borç Yönetimi"].index(st.session_state.menu) if st.session_state.menu in ["🏠 Ana Sayfa", "💰 Gider Kalemleri", "🏢 Oda Yönetimi",
-     "📋 Oda Bilgi Kartı",
-     "🌱 Üretim Takvimi", "📅 İş Planı",
-     "📊 Günlük Hasat", "🌡️ İklim Verileri", "💵 Satış İşlemleri",
-     "👷 İşçi Puantaj", "📈 Raporlar ve Grafikler", "💼 Gelir-Gider Analizi",
-     "📥 Veri Yedekleme", "💵 Gelir Hesaplama", "📊 Gelir-Gider Şablonu",
-     "💳 Borç Yönetimi"] else 0
+     "💳 Borç Yönetimi"]
 )
-
-st.session_state.menu = menu
 
 st.sidebar.markdown("---")
 st.sidebar.info("**Mantar Üretimi İş Takip Sistemi v1.0**")
