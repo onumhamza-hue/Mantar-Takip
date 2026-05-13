@@ -1065,260 +1065,268 @@ elif menu == "💰 Gider Kalemleri":
 
 # Oda Yönetimi
 elif menu == "🏢 Oda Yönetimi":
-    st.title("🏢 Oda Yönetimi")
-    
-    tab1, tab2, tab3 = st.tabs(["📋 Odalar", "➕ Yeni Oda", "💰 Oda Giderleri"])
-    
-    with tab1:
-        df_odalar = _cached_tum_odalar()
+    @st.fragment
+    def render_oda_yonetimi():
+        st.title("🏢 Oda Yönetimi")
         
-        if not df_odalar.empty:
-            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
-            _od_orig = df_odalar[['id', 'oda_adi', 'alan_m2', 'kapasite_kg', 'durum', 'aciklama']].copy()
-            _od_edited = st.data_editor(
-                _od_orig,
-                column_config={
-                    "id": None,
-                    "oda_adi": st.column_config.TextColumn("Oda Adı"),
-                    "alan_m2": st.column_config.NumberColumn("Alan (m²)", min_value=0, step=1, format="%.1f"),
-                    "kapasite_kg": st.column_config.NumberColumn("Kapasite (kg)", min_value=0, step=10, format="%.1f"),
-                    "durum": st.column_config.SelectboxColumn("Durum", options=["Aktif", "Hazırlık", "Bakım", "Pasif"]),
-                    "aciklama": st.column_config.TextColumn("Açıklama"),
-                },
-                hide_index=True,
-                use_container_width=True,
-                key="oda_editor"
-            )
-            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_oda_editor_save"):
-                conn = get_db_connection()
-                c = conn.cursor()
-                for _, _r in _od_edited.iterrows():
-                    if pd.notna(_r.get('id')):
-                        c.execute("UPDATE odalar SET oda_adi=?, alan_m2=?, kapasite_kg=?, durum=?, aciklama=? WHERE id=?",
-                                  (str(_r['oda_adi']), float(_r['alan_m2'] or 0), float(_r['kapasite_kg'] or 0),
-                                   str(_r['durum'] or 'Aktif'), str(_r['aciklama'] or ''), int(_r['id'])))
-                conn.commit()
-                conn.close()
-                st.success("✅ Değişiklikler kaydedildi!")
-                _rerun()
-        else:
-            st.info("Henüz oda bulunmuyor.")
-    
-    with tab2:
-        st.subheader("➕ Yeni Oda Ekle")
+        tab1, tab2, tab3 = st.tabs(["📋 Odalar", "➕ Yeni Oda", "💰 Oda Giderleri"])
         
-        col1, col2 = st.columns(2)
-        with col1:
-            oda_adi = st.text_input("Oda Adı *", key="yeni_oda_adi")
-            alan_m2 = st.number_input("Alan (m²)", min_value=0.0, step=1.0, key="yeni_alan_m2")
-        
-        with col2:
-            kapasite_kg = st.number_input("Kapasite (kg)", min_value=0.0, step=10.0, key="yeni_kapasite_kg")
-            durum = st.selectbox("Durum", ["Aktif", "Hazırlık", "Bakım", "Pasif"], key="yeni_oda_durum")
-        
-        aciklama = st.text_area("Açıklama", key="yeni_oda_aciklama")
-        
-        if st.button("💾 Oda Ekle", type="primary"):
-            if oda_adi:
-                conn = get_db_connection()
-                c = conn.cursor()
-                try:
-                    c.execute("INSERT INTO odalar (oda_adi, alan_m2, kapasite_kg, durum, aciklama) VALUES (?, ?, ?, ?, ?)",
-                            (oda_adi, alan_m2, kapasite_kg, durum, aciklama))
-                    conn.commit()
-                    st.success("✅ Yeni oda eklendi!")
-                    _rerun()
-                except sqlite3.IntegrityError:
-                    st.error("❌ Bu isimde bir oda zaten mevcut!")
-                finally:
-                    conn.close()
-            else:
-                st.error("❌ Oda adı zorunludur!")
-    
-    with tab3:
-        st.subheader("💰 Oda Giderleri Ekle")
-        
-        df_odalar = _cached_odalar()
-        df_giderler = _cached_gider_kalemleri()
-        
-        if not df_odalar.empty and not df_giderler.empty:
-            col1, col2 = st.columns(2)
+        with tab1:
+            df_odalar = _cached_tum_odalar()
             
-            with col1:
-                secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
-                oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
-                
-                secili_gider = st.selectbox("Gider Kalemi *", df_giderler['kalem_adi'].tolist())
-                varsayilan_tutar = df_giderler[df_giderler['kalem_adi'] == secili_gider]['birim_fiyat'].values[0]
-            
-            with col2:
-                gider_tarih = st.date_input("Tarih *", value=date.today())
-                gider_tutar = st.number_input("Tutar (TL) *", value=float(varsayilan_tutar), min_value=0.0, step=100.0)
-            
-            gider_aciklama = st.text_area("Açıklama")
-            
-            if st.button("💾 Gider Ekle", type="primary"):
-                conn = get_db_connection()
-                c = conn.cursor()
-                c.execute("INSERT INTO oda_giderleri (oda_id, gider_kalemi, tutar, tarih, aciklama) VALUES (?, ?, ?, ?, ?)",
-                        (int(oda_id), secili_gider, float(gider_tutar), str(gider_tarih), gider_aciklama))
-                conn.commit()
-                conn.close()
-                st.success("✅ Gider kaydedildi!")
-                _rerun()
-            
-            # Mevcut giderleri göster
-            st.markdown("---")
-            st.subheader("📋 Kayıtlı Giderler")
-            
-            conn = get_db_connection()
-            df_kayitli_giderler = _read_sql("""
-                SELECT og.id, og.tarih, o.oda_adi, og.gider_kalemi, og.tutar, og.aciklama
-                FROM oda_giderleri og
-                JOIN odalar o ON og.oda_id = o.id
-                ORDER BY og.tarih DESC
-                LIMIT 100
-            """, conn)
-            conn.close()
-            
-            if not df_kayitli_giderler.empty:
-                st.caption("💡 Hücreye çift tıklayarak düzenleyin. Satırı silmek için sol taraftaki 🗑️ ikonuna tıklayın.")
-                _og_orig = df_kayitli_giderler.copy()
-                _og_edited = st.data_editor(
-                    _og_orig,
+            if not df_odalar.empty:
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+                _od_orig = df_odalar[['id', 'oda_adi', 'alan_m2', 'kapasite_kg', 'durum', 'aciklama']].copy()
+                _od_edited = st.data_editor(
+                    _od_orig,
                     column_config={
                         "id": None,
-                        "tarih": st.column_config.DateColumn("Tarih"),
-                        "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
-                        "gider_kalemi": st.column_config.TextColumn("Gider Kalemi"),
-                        "tutar": st.column_config.NumberColumn("Tutar (TL)", min_value=0, step=100, format="%.2f"),
+                        "oda_adi": st.column_config.TextColumn("Oda Adı"),
+                        "alan_m2": st.column_config.NumberColumn("Alan (m²)", min_value=0, step=1, format="%.1f"),
+                        "kapasite_kg": st.column_config.NumberColumn("Kapasite (kg)", min_value=0, step=10, format="%.1f"),
+                        "durum": st.column_config.SelectboxColumn("Durum", options=["Aktif", "Hazırlık", "Bakım", "Pasif"]),
                         "aciklama": st.column_config.TextColumn("Açıklama"),
                     },
                     hide_index=True,
                     use_container_width=True,
-                    num_rows="dynamic",
-                    key="og_editor"
+                    key="oda_editor"
                 )
-                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_og_editor_save"):
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_oda_editor_save"):
                     conn = get_db_connection()
                     c = conn.cursor()
-                    # Silinen satırları bul (orijinalde olup düzenlenmiş tabloda olmayan id'ler)
-                    _og_mevcut_ids = set(_og_edited['id'].dropna().astype(int).tolist())
-                    _og_tum_ids    = set(_og_orig['id'].dropna().astype(int).tolist())
-                    _silinecekler  = _og_tum_ids - _og_mevcut_ids
-                    for _del_id in _silinecekler:
-                        c.execute("DELETE FROM oda_giderleri WHERE id=?", (_del_id,))
-                    # Düzenlenen satırları güncelle
-                    for _, _r in _og_edited.iterrows():
+                    for _, _r in _od_edited.iterrows():
                         if pd.notna(_r.get('id')):
-                            c.execute("UPDATE oda_giderleri SET tarih=?, gider_kalemi=?, tutar=?, aciklama=? WHERE id=?",
-                                      (str(_r['tarih']), str(_r['gider_kalemi']), float(_r['tutar'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                            c.execute("UPDATE odalar SET oda_adi=?, alan_m2=?, kapasite_kg=?, durum=?, aciklama=? WHERE id=?",
+                                      (str(_r['oda_adi']), float(_r['alan_m2'] or 0), float(_r['kapasite_kg'] or 0),
+                                       str(_r['durum'] or 'Aktif'), str(_r['aciklama'] or ''), int(_r['id'])))
                     conn.commit()
                     conn.close()
-                    if _silinecekler:
-                        st.success(f"✅ {len(_silinecekler)} kayıt silindi, değişiklikler kaydedildi!")
-                    else:
-                        st.success("✅ Değişiklikler kaydedildi!")
+                    st.success("✅ Değişiklikler kaydedildi!")
                     _rerun()
-        else:
-            st.warning("⚠️ Önce oda ve gider kalemleri eklemelisiniz!")
+            else:
+                st.info("Henüz oda bulunmuyor.")
+        
+        with tab2:
+            st.subheader("➕ Yeni Oda Ekle")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                oda_adi = st.text_input("Oda Adı *", key="yeni_oda_adi")
+                alan_m2 = st.number_input("Alan (m²)", min_value=0.0, step=1.0, key="yeni_alan_m2")
+            
+            with col2:
+                kapasite_kg = st.number_input("Kapasite (kg)", min_value=0.0, step=10.0, key="yeni_kapasite_kg")
+                durum = st.selectbox("Durum", ["Aktif", "Hazırlık", "Bakım", "Pasif"], key="yeni_oda_durum")
+            
+            aciklama = st.text_area("Açıklama", key="yeni_oda_aciklama")
+            
+            if st.button("💾 Oda Ekle", type="primary"):
+                if oda_adi:
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    try:
+                        c.execute("INSERT INTO odalar (oda_adi, alan_m2, kapasite_kg, durum, aciklama) VALUES (?, ?, ?, ?, ?)",
+                                (oda_adi, alan_m2, kapasite_kg, durum, aciklama))
+                        conn.commit()
+                        st.success("✅ Yeni oda eklendi!")
+                        _rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("❌ Bu isimde bir oda zaten mevcut!")
+                    finally:
+                        conn.close()
+                else:
+                    st.error("❌ Oda adı zorunludur!")
+        
+        with tab3:
+            st.subheader("💰 Oda Giderleri Ekle")
+            
+            df_odalar = _cached_odalar()
+            df_giderler = _cached_gider_kalemleri()
+            
+            if not df_odalar.empty and not df_giderler.empty:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
+                    oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
+                    
+                    secili_gider = st.selectbox("Gider Kalemi *", df_giderler['kalem_adi'].tolist())
+                    varsayilan_tutar = df_giderler[df_giderler['kalem_adi'] == secili_gider]['birim_fiyat'].values[0]
+                
+                with col2:
+                    gider_tarih = st.date_input("Tarih *", value=date.today())
+                    gider_tutar = st.number_input("Tutar (TL) *", value=float(varsayilan_tutar), min_value=0.0, step=100.0)
+                
+                gider_aciklama = st.text_area("Açıklama")
+                
+                if st.button("💾 Gider Ekle", type="primary"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO oda_giderleri (oda_id, gider_kalemi, tutar, tarih, aciklama) VALUES (?, ?, ?, ?, ?)",
+                            (int(oda_id), secili_gider, float(gider_tutar), str(gider_tarih), gider_aciklama))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Gider kaydedildi!")
+                    _rerun()
+                
+                # Mevcut giderleri göster
+                st.markdown("---")
+                st.subheader("📋 Kayıtlı Giderler")
+                
+                conn = get_db_connection()
+                df_kayitli_giderler = _read_sql("""
+                    SELECT og.id, og.tarih, o.oda_adi, og.gider_kalemi, og.tutar, og.aciklama
+                    FROM oda_giderleri og
+                    JOIN odalar o ON og.oda_id = o.id
+                    ORDER BY og.tarih DESC
+                    LIMIT 100
+                """, conn)
+                conn.close()
+                
+                if not df_kayitli_giderler.empty:
+                    st.caption("💡 Hücreye çift tıklayarak düzenleyin. Satırı silmek için sol taraftaki 🗑️ ikonuna tıklayın.")
+                    _og_orig = df_kayitli_giderler.copy()
+                    _og_edited = st.data_editor(
+                        _og_orig,
+                        column_config={
+                            "id": None,
+                            "tarih": st.column_config.DateColumn("Tarih"),
+                            "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
+                            "gider_kalemi": st.column_config.TextColumn("Gider Kalemi"),
+                            "tutar": st.column_config.NumberColumn("Tutar (TL)", min_value=0, step=100, format="%.2f"),
+                            "aciklama": st.column_config.TextColumn("Açıklama"),
+                        },
+                        hide_index=True,
+                        use_container_width=True,
+                        num_rows="dynamic",
+                        key="og_editor"
+                    )
+                    if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_og_editor_save"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        # Silinen satırları bul (orijinalde olup düzenlenmiş tabloda olmayan id'ler)
+                        _og_mevcut_ids = set(_og_edited['id'].dropna().astype(int).tolist())
+                        _og_tum_ids    = set(_og_orig['id'].dropna().astype(int).tolist())
+                        _silinecekler  = _og_tum_ids - _og_mevcut_ids
+                        for _del_id in _silinecekler:
+                            c.execute("DELETE FROM oda_giderleri WHERE id=?", (_del_id,))
+                        # Düzenlenen satırları güncelle
+                        for _, _r in _og_edited.iterrows():
+                            if pd.notna(_r.get('id')):
+                                c.execute("UPDATE oda_giderleri SET tarih=?, gider_kalemi=?, tutar=?, aciklama=? WHERE id=?",
+                                          (str(_r['tarih']), str(_r['gider_kalemi']), float(_r['tutar'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                        conn.commit()
+                        conn.close()
+                        if _silinecekler:
+                            st.success(f"✅ {len(_silinecekler)} kayıt silindi, değişiklikler kaydedildi!")
+                        else:
+                            st.success("✅ Değişiklikler kaydedildi!")
+                        _rerun()
+            else:
+                st.warning("⚠️ Önce oda ve gider kalemleri eklemelisiniz!")
+    
+    render_oda_yonetimi()
 
 # Günlük Hasat
 elif menu == "📊 Günlük Hasat":
-    st.title("📊 Günlük Hasat Kayıtları")
-    
-    tab1, tab2 = st.tabs(["➕ Hasat Gir", "📋 Hasat Kayıtları"])
-    
-    with tab1:
-        df_odalar = _cached_odalar_aktif()
+    @st.fragment
+    def render_gunluk_hasat():
+        st.title("📊 Günlük Hasat Kayıtları")
         
-        if not df_odalar.empty:
-            st.subheader("➕ Yeni Hasat Kaydı")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
-                oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
-                hasat_tarih = st.date_input("Tarih *", value=date.today())
-            
-            with col2:
-                hasat_kg = st.number_input("Hasat Miktarı (kg) *", min_value=0.0, step=0.5)
-                kalite = st.selectbox("Kalite", ["A Kalite", "B Kalite", "C Kalite", "Karışık"])
-            
-            hasat_aciklama = st.text_area("Açıklama")
-            
-            if st.button("💾 Hasat Kaydet", type="primary"):
-                if hasat_kg > 0:
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute("INSERT INTO gunluk_hasat (oda_id, tarih, hasat_kg, kalite, aciklama) VALUES (?, ?, ?, ?, ?)",
-                            (int(oda_id), str(hasat_tarih), float(hasat_kg), kalite, hasat_aciklama))
-                    conn.commit()
-                    conn.close()
-                    st.success("✅ Hasat kaydedildi!")
-                    _rerun()
-                else:
-                    st.error("❌ Hasat miktarı 0'dan büyük olmalıdır!")
-        else:
-            st.warning("⚠️ Önce aktif oda eklemelisiniz!")
-    
-    with tab2:
-        st.subheader("📋 Hasat Kayıtları")
+        tab1, tab2 = st.tabs(["➕ Hasat Gir", "📋 Hasat Kayıtları"])
         
-        # Filtreleme
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            tarih_baslangic = st.date_input("Başlangıç Tarihi", value=date.today() - timedelta(days=30))
-        with col2:
-            tarih_bitis = st.date_input("Bitiş Tarihi", value=date.today())
-        with col3:
-            df_odalar = _cached_odalar()
-            filtre_oda = st.selectbox("Oda Filtresi", ["Tümü"] + df_odalar['oda_adi'].tolist())
-        
-        # Verileri çek - cache'den al
-        df_hasat = _cached_hasat_verileri(filtre_oda, tarih_baslangic, tarih_bitis)
-        
-        if not df_hasat.empty:
-            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
-            _hs_orig = df_hasat.copy()
-            _hs_edited = st.data_editor(
-                _hs_orig,
-                column_config={
-                    "id": None,
-                    "tarih": st.column_config.DateColumn("Tarih"),
-                    "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
-                    "hasat_kg": st.column_config.NumberColumn("Hasat (kg)", min_value=0, step=0.5, format="%.2f"),
-                    "kalite": st.column_config.SelectboxColumn("Kalite", options=["A Kalite", "B Kalite", "C Kalite", "Karışık"]),
-                    "aciklama": st.column_config.TextColumn("Açıklama"),
-                },
-                hide_index=True,
-                use_container_width=True,
-                key="hasat_editor"
-            )
-            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_hasat_editor_save"):
-                conn = get_db_connection()
-                c = conn.cursor()
-                for _, _r in _hs_edited.iterrows():
-                    if pd.notna(_r.get('id')):
-                        c.execute("UPDATE gunluk_hasat SET tarih=?, hasat_kg=?, kalite=?, aciklama=? WHERE id=?",
-                                  (str(_r['tarih']), float(_r['hasat_kg'] or 0), str(_r['kalite'] or ''), str(_r['aciklama'] or ''), int(_r['id'])))
-                conn.commit()
-                conn.close()
-                st.success("✅ Değişiklikler kaydedildi!")
-                _rerun()
+        with tab1:
+            df_odalar = _cached_odalar_aktif()
             
-            # Özet istatistikler
-            st.markdown("---")
+            if not df_odalar.empty:
+                st.subheader("➕ Yeni Hasat Kaydı")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    secili_oda = st.selectbox("Oda Seçin *", df_odalar['oda_adi'].tolist())
+                    oda_id = df_odalar[df_odalar['oda_adi'] == secili_oda]['id'].values[0]
+                    hasat_tarih = st.date_input("Tarih *", value=date.today())
+                
+                with col2:
+                    hasat_kg = st.number_input("Hasat Miktarı (kg) *", min_value=0.0, step=0.5)
+                    kalite = st.selectbox("Kalite", ["A Kalite", "B Kalite", "C Kalite", "Karışık"])
+                
+                hasat_aciklama = st.text_area("Açıklama")
+                
+                if st.button("💾 Hasat Kaydet", type="primary"):
+                    if hasat_kg > 0:
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute("INSERT INTO gunluk_hasat (oda_id, tarih, hasat_kg, kalite, aciklama) VALUES (?, ?, ?, ?, ?)",
+                                (int(oda_id), str(hasat_tarih), float(hasat_kg), kalite, hasat_aciklama))
+                        conn.commit()
+                        conn.close()
+                        st.success("✅ Hasat kaydedildi!")
+                        _rerun()
+                    else:
+                        st.error("❌ Hasat miktarı 0'dan büyük olmalıdır!")
+            else:
+                st.warning("⚠️ Önce aktif oda eklemelisiniz!")
+        
+        with tab2:
+            st.subheader("📋 Hasat Kayıtları")
+            
+            # Filtreleme
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Toplam Hasat", f"{df_hasat['hasat_kg'].sum():.2f} kg")
+                tarih_baslangic = st.date_input("Başlangıç Tarihi", value=date.today() - timedelta(days=30))
             with col2:
-                st.metric("Ortalama Günlük", f"{df_hasat['hasat_kg'].mean():.2f} kg")
+                tarih_bitis = st.date_input("Bitiş Tarihi", value=date.today())
             with col3:
-                st.metric("Kayıt Sayısı", len(df_hasat))
-        else:
-            st.info("Seçilen kriterlere uygun hasat kaydı bulunamadı.")
+                df_odalar = _cached_odalar()
+                filtre_oda = st.selectbox("Oda Filtresi", ["Tümü"] + df_odalar['oda_adi'].tolist())
+            
+            # Verileri çek - cache'den al
+            df_hasat = _cached_hasat_verileri(filtre_oda, tarih_baslangic, tarih_bitis)
+            
+            if not df_hasat.empty:
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+                _hs_orig = df_hasat.copy()
+                _hs_edited = st.data_editor(
+                    _hs_orig,
+                    column_config={
+                        "id": None,
+                        "tarih": st.column_config.DateColumn("Tarih"),
+                        "oda_adi": st.column_config.TextColumn("Oda", disabled=True),
+                        "hasat_kg": st.column_config.NumberColumn("Hasat (kg)", min_value=0, step=0.5, format="%.2f"),
+                        "kalite": st.column_config.SelectboxColumn("Kalite", options=["A Kalite", "B Kalite", "C Kalite", "Karışık"]),
+                        "aciklama": st.column_config.TextColumn("Açıklama"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="hasat_editor"
+                )
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_hasat_editor_save"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    for _, _r in _hs_edited.iterrows():
+                        if pd.notna(_r.get('id')):
+                            c.execute("UPDATE gunluk_hasat SET tarih=?, hasat_kg=?, kalite=?, aciklama=? WHERE id=?",
+                                      (str(_r['tarih']), float(_r['hasat_kg'] or 0), str(_r['kalite'] or ''), str(_r['aciklama'] or ''), int(_r['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Değişiklikler kaydedildi!")
+                    _rerun()
+                
+                # Özet istatistikler
+                st.markdown("---")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Toplam Hasat", f"{df_hasat['hasat_kg'].sum():.2f} kg")
+                with col2:
+                    st.metric("Ortalama Günlük", f"{df_hasat['hasat_kg'].mean():.2f} kg")
+                with col3:
+                    st.metric("Kayıt Sayısı", len(df_hasat))
+            else:
+                st.info("Seçilen kriterlere uygun hasat kaydı bulunamadı.")
+    
+    render_gunluk_hasat()
 
 # İklim Verileri
 elif menu == "🌡️ İklim Verileri":
