@@ -957,103 +957,111 @@ st.sidebar.info("**Mantar Üretimi İş Takip Sistemi v1.0**")
 
 # Ana Sayfa
 if menu == "🏠 Ana Sayfa":
-    st.title("🍄 Mantar Üretimi İş Takip Sistemi")
-    st.markdown("### Hoş Geldiniz!")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    conn = get_db_connection()
-    
-    # Özet istatistikler - cache'den al
-    try:
-        toplam_oda, bugun_hasat, bu_ay_satis = _cached_anasayfa_metrikleri()
+    @st.fragment
+    def render_anasayfa():
+        st.title("🍄 Mantar Üretimi İş Takip Sistemi")
+        st.markdown("### Hoş Geldiniz!")
         
+        col1, col2, col3 = st.columns(3)
+        
+        conn = get_db_connection()
+        
+        # Özet istatistikler - cache'den al
+        try:
+            toplam_oda, bugun_hasat, bu_ay_satis = _cached_anasayfa_metrikleri()
+            
+            with col1:
+                st.metric("Toplam Oda Sayısı", toplam_oda)
+            
+            with col2:
+                st.metric("Bugünkü Hasat (kg)", f"{bugun_hasat:.2f}")
+            
+            with col3:
+                st.metric("Bu Ay Satış (TL)", f"{bu_ay_satis:,.2f}")
+        except Exception as e:
+            st.error(f"İstatistik yüklenemedi: {e}")
+        
+        conn.close()
+        
+        st.markdown("---")
+        st.markdown("### 📋 Hızlı İşlemler")
+        
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Toplam Oda Sayısı", toplam_oda)
-        
+            st.info("**💰 Gider Kalemleri**\nGider kalemlerinizi yönetin")
         with col2:
-            st.metric("Bugünkü Hasat (kg)", f"{bugun_hasat:.2f}")
-        
+            st.success("**📊 Günlük Hasat**\nHasat verilerinizi girin")
         with col3:
-            st.metric("Bu Ay Satış (TL)", f"{bu_ay_satis:,.2f}")
-    except Exception as e:
-        st.error(f"İstatistik yüklenemedi: {e}")
+            st.warning("**🌡️ İklim Takibi**\nOda iklim verilerini kaydedin")
     
-    conn.close()
-    
-    st.markdown("---")
-    st.markdown("### 📋 Hızlı İşlemler")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.info("**💰 Gider Kalemleri**\nGider kalemlerinizi yönetin")
-    with col2:
-        st.success("**📊 Günlük Hasat**\nHasat verilerinizi girin")
-    with col3:
-        st.warning("**🌡️ İklim Takibi**\nOda iklim verilerini kaydedin")
+    render_anasayfa()
 
 # Gider Kalemleri
 elif menu == "💰 Gider Kalemleri":
-    st.title("💰 Gider Kalemleri Yönetimi")
-    
-    tab1, tab2 = st.tabs(["📋 Gider Listesi", "➕ Yeni Gider Kalemi"])
-    
-    with tab1:
-        df_giderler = _cached_giderler()
+    @st.fragment
+    def render_gider_kalemleri():
+        st.title("💰 Gider Kalemleri Yönetimi")
         
-        if not df_giderler.empty:
-            st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
-            _gd_orig = df_giderler[['id', 'kalem_adi', 'birim_fiyat', 'aciklama']].copy()
-            _gd_edited = st.data_editor(
-                _gd_orig,
-                column_config={
-                    "id": None,
-                    "kalem_adi": st.column_config.TextColumn("Gider Kalemi"),
-                    "birim_fiyat": st.column_config.NumberColumn("Birim Fiyat (TL)", min_value=0, step=100, format="%.2f"),
-                    "aciklama": st.column_config.TextColumn("Açıklama"),
-                },
-                hide_index=True,
-                use_container_width=True,
-                key="gider_editor"
-            )
-            st.markdown(f"**Toplam: {len(df_giderler)} gider kalemi**")
-            if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_gider_editor_save"):
-                conn = get_db_connection()
-                c = conn.cursor()
-                for _, _r in _gd_edited.iterrows():
-                    if pd.notna(_r.get('id')):
-                        c.execute("UPDATE gider_kalemleri SET kalem_adi=?, birim_fiyat=?, aciklama=? WHERE id=?",
-                                  (str(_r['kalem_adi']), float(_r['birim_fiyat'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
-                conn.commit()
-                conn.close()
-                st.success("✅ Değişiklikler kaydedildi!")
-                _rerun()
-        else:
-            st.info("Henüz gider kalemi bulunmuyor.")
-    
-    with tab2:
-        st.subheader("➕ Yeni Gider Kalemi Ekle")
+        tab1, tab2 = st.tabs(["📋 Gider Listesi", "➕ Yeni Gider Kalemi"])
         
-        col1, col2 = st.columns(2)
-        with col1:
-            yeni_kalem = st.text_input("Gider Kalemi Adı *")
-            yeni_fiyat = st.number_input("Birim Fiyat (TL) *", min_value=0.0, step=100.0)
-        
-        with col2:
-            yeni_aciklama = st.text_area("Açıklama", key="yeni_gider_aciklama")
-        
-        if st.button("💾 Kaydet", type="primary"):
-            if yeni_kalem and yeni_fiyat >= 0:
-                conn = get_db_connection()
-                c = conn.cursor()
-                c.execute("INSERT INTO gider_kalemleri (kalem_adi, birim_fiyat, aciklama) VALUES (?, ?, ?)",
-                        (yeni_kalem, yeni_fiyat, yeni_aciklama))
-                conn.commit()
-                conn.close()
-                st.success("✅ Yeni gider kalemi eklendi!")
-                _rerun()
+        with tab1:
+            df_giderler = _cached_giderler()
+            
+            if not df_giderler.empty:
+                st.caption("💡 Hücreye çift tıklayarak düzenleyin, ardından '💾 Değişiklikleri Kaydet' butonuna basın.")
+                _gd_orig = df_giderler[['id', 'kalem_adi', 'birim_fiyat', 'aciklama']].copy()
+                _gd_edited = st.data_editor(
+                    _gd_orig,
+                    column_config={
+                        "id": None,
+                        "kalem_adi": st.column_config.TextColumn("Gider Kalemi"),
+                        "birim_fiyat": st.column_config.NumberColumn("Birim Fiyat (TL)", min_value=0, step=100, format="%.2f"),
+                        "aciklama": st.column_config.TextColumn("Açıklama"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="gider_editor"
+                )
+                st.markdown(f"**Toplam: {len(df_giderler)} gider kalemi**")
+                if st.button("💾 Değişiklikleri Kaydet", type="primary", key="btn_gider_editor_save"):
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    for _, _r in _gd_edited.iterrows():
+                        if pd.notna(_r.get('id')):
+                            c.execute("UPDATE gider_kalemleri SET kalem_adi=?, birim_fiyat=?, aciklama=? WHERE id=?",
+                                      (str(_r['kalem_adi']), float(_r['birim_fiyat'] or 0), str(_r['aciklama'] or ''), int(_r['id'])))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Değişiklikler kaydedildi!")
+                    _rerun()
             else:
-                st.error("❌ Lütfen tüm zorunlu alanları doldurun!")
+                st.info("Henüz gider kalemi bulunmuyor.")
+        
+        with tab2:
+            st.subheader("➕ Yeni Gider Kalemi Ekle")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                yeni_kalem = st.text_input("Gider Kalemi Adı *")
+                yeni_fiyat = st.number_input("Birim Fiyat (TL) *", min_value=0.0, step=100.0)
+            
+            with col2:
+                yeni_aciklama = st.text_area("Açıklama", key="yeni_gider_aciklama")
+            
+            if st.button("💾 Kaydet", type="primary"):
+                if yeni_kalem and yeni_fiyat >= 0:
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("INSERT INTO gider_kalemleri (kalem_adi, birim_fiyat, aciklama) VALUES (?, ?, ?)",
+                            (yeni_kalem, yeni_fiyat, yeni_aciklama))
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Yeni gider kalemi eklendi!")
+                    _rerun()
+                else:
+                    st.error("❌ Lütfen tüm zorunlu alanları doldurun!")
+    
+    render_gider_kalemleri()
 
 # Oda Yönetimi
 elif menu == "🏢 Oda Yönetimi":
